@@ -8,6 +8,7 @@ const state = {
   mixPlaying: false,
   mixStartedAt: 0,
   jobs: [],
+  tools: {},
 };
 
 const els = {
@@ -27,15 +28,455 @@ const els = {
   clearUploadsBtn: document.querySelector("#clearUploadsBtn"),
   installToolsBtn: document.querySelector("#installToolsBtn"),
   modelSelect: document.querySelector("#modelSelect"),
+  languageSelect: document.querySelector("#languageSelect"),
   log: document.querySelector("#log"),
   toolStatus: document.querySelector("#toolStatus"),
 };
+
+const translations = {
+  en: {
+    language: "Language",
+    splashTitle: "Separate every voice and instrument.",
+    splashCopy: "Analyze MP3 tracks, preview stems in sync, remove instruments, and export a clean custom mix.",
+    start: "Start DeTrace",
+    licenseText: "This project is open source and available under the MIT License.",
+    authorText: "Author: Roberto Raimondo - IS Senior Systems Engineer II",
+    rightsText: "© 2026 All Rights Reserved.",
+    appTitle: "Stem separator and MP3 mixer",
+    installTools: "Install Tools",
+    dropTitle: "Drop an MP3 here",
+    dropHint: "or choose a file to analyze vocals and instruments.",
+    chooseMp3: "Choose MP3",
+    original: "Original",
+    selectedPreview: "Selected instrument preview",
+    playSelected: "Play Selected",
+    stop: "Stop",
+    stemModel: "Stem model",
+    model6: "6 stems: vocals, drums, bass, guitar, piano, other",
+    model4: "4 stems: vocals, drums, bass, other",
+    analyzeAgain: "Analyze Again",
+    exportMp3: "Export MP3",
+    uploads: "Uploads",
+    clear: "Clear",
+    session: "Session",
+    ready: "ready",
+    missing: "missing",
+    installing: "Installing...",
+    installingTools: "Installing missing audio tools. This can take a few minutes...",
+    toolInstallFailed: "Tool installation failed.",
+    nothingNew: "nothing new",
+    toolInstallComplete: "Tool installation complete: {installed}.",
+    clearConfirm: "Clear all uploaded MP3s and analyzed tracks?",
+    couldNotClearUploads: "Could not clear uploads.",
+    uploadsCleared: "Uploaded MP3 list cleared.",
+    emptyUploads: "No uploaded files yet.",
+    tracksFound: "{count} tracks found",
+    notAnalyzed: "Not analyzed",
+    couldNotLoadUploads: "Could not load uploads.",
+    couldNotLoadUploaded: "Could not load uploaded file.",
+    loaded: "Loaded {filename}.",
+    uploading: "Uploading {filename}...",
+    uploadFailed: "Upload failed.",
+    uploadComplete: "Upload complete. Analyzing instruments now...",
+    analyzing: "Analyzing...",
+    analyzingWithModel: "Analyzing the MP3 with {model}. This can take a few minutes.",
+    separationFailed: "Separation failed.",
+    foundTracks: "Found {count} tracks: {tracks}.",
+    select: "Select",
+    exporting: "Exporting...",
+    exportingTracks: "Exporting selected tracks to MP3...",
+    exportFailed: "Export failed.",
+    exportDownloaded: "MP3 export downloaded.",
+    couldNotDownload: "Could not download exported MP3.",
+    couldNotReadStatus: "Could not read tool status.",
+  },
+  it: {
+    language: "Lingua",
+    splashTitle: "Separa ogni voce e strumento.",
+    splashCopy: "Analizza brani MP3, ascolta le tracce in sincronia, rimuovi strumenti ed esporta un mix pulito.",
+    start: "Avvia DeTrace",
+    licenseText: "Questo progetto è open source e disponibile con licenza MIT.",
+    authorText: "Autore: Roberto Raimondo - IS Senior Systems Engineer II",
+    rightsText: "© 2026 Tutti i diritti riservati.",
+    appTitle: "Separatore di tracce e mixer MP3",
+    installTools: "Installa strumenti",
+    dropTitle: "Trascina qui un MP3",
+    dropHint: "oppure scegli un file per analizzare voci e strumenti.",
+    chooseMp3: "Scegli MP3",
+    original: "Originale",
+    selectedPreview: "Anteprima strumenti selezionati",
+    playSelected: "Riproduci selezionati",
+    stop: "Stop",
+    stemModel: "Modello tracce",
+    model6: "6 tracce: voce, batteria, basso, chitarra, piano, altro",
+    model4: "4 tracce: voce, batteria, basso, altro",
+    analyzeAgain: "Analizza di nuovo",
+    exportMp3: "Esporta MP3",
+    uploads: "Caricamenti",
+    clear: "Pulisci",
+    session: "Sessione",
+    ready: "pronto",
+    missing: "mancante",
+    select: "Seleziona",
+    emptyUploads: "Nessun file caricato.",
+    tracksFound: "{count} tracce trovate",
+    notAnalyzed: "Non analizzato",
+  },
+  es: {
+    language: "Idioma",
+    splashTitle: "Separa cada voz e instrumento.",
+    splashCopy: "Analiza pistas MP3, previsualiza stems sincronizados, elimina instrumentos y exporta una mezcla limpia.",
+    start: "Iniciar DeTrace",
+    licenseText: "Este proyecto es de código abierto y está disponible bajo la licencia MIT.",
+    authorText: "Autor: Roberto Raimondo - IS Senior Systems Engineer II",
+    rightsText: "© 2026 Todos los derechos reservados.",
+    appTitle: "Separador de stems y mezclador MP3",
+    installTools: "Instalar herramientas",
+    dropTitle: "Suelta un MP3 aquí",
+    dropHint: "o elige un archivo para analizar voces e instrumentos.",
+    chooseMp3: "Elegir MP3",
+    original: "Original",
+    selectedPreview: "Vista previa de instrumentos seleccionados",
+    playSelected: "Reproducir seleccionados",
+    stop: "Detener",
+    stemModel: "Modelo de stems",
+    model6: "6 stems: voz, batería, bajo, guitarra, piano, otros",
+    model4: "4 stems: voz, batería, bajo, otros",
+    analyzeAgain: "Analizar otra vez",
+    exportMp3: "Exportar MP3",
+    uploads: "Subidas",
+    clear: "Borrar",
+    session: "Sesión",
+    ready: "listo",
+    missing: "falta",
+    select: "Seleccionar",
+    emptyUploads: "Aún no hay archivos subidos.",
+    tracksFound: "{count} pistas encontradas",
+    notAnalyzed: "Sin analizar",
+  },
+  de: {
+    language: "Sprache",
+    splashTitle: "Trenne jede Stimme und jedes Instrument.",
+    splashCopy: "Analysiere MP3-Titel, höre Stems synchron vor, entferne Instrumente und exportiere einen sauberen Mix.",
+    start: "DeTrace starten",
+    licenseText: "Dieses Projekt ist Open Source und unter der MIT-Lizenz verfügbar.",
+    authorText: "Autor: Roberto Raimondo - IS Senior Systems Engineer II",
+    rightsText: "© 2026 Alle Rechte vorbehalten.",
+    appTitle: "Stem-Trenner und MP3-Mixer",
+    installTools: "Tools installieren",
+    dropTitle: "MP3 hier ablegen",
+    dropHint: "oder eine Datei auswählen, um Stimmen und Instrumente zu analysieren.",
+    chooseMp3: "MP3 auswählen",
+    original: "Original",
+    selectedPreview: "Vorschau ausgewählter Instrumente",
+    playSelected: "Auswahl abspielen",
+    stop: "Stopp",
+    stemModel: "Stem-Modell",
+    model6: "6 Stems: Gesang, Schlagzeug, Bass, Gitarre, Klavier, Sonstiges",
+    model4: "4 Stems: Gesang, Schlagzeug, Bass, Sonstiges",
+    analyzeAgain: "Erneut analysieren",
+    exportMp3: "MP3 exportieren",
+    uploads: "Uploads",
+    clear: "Leeren",
+    session: "Sitzung",
+    ready: "bereit",
+    missing: "fehlt",
+    select: "Auswählen",
+    emptyUploads: "Noch keine Dateien hochgeladen.",
+    tracksFound: "{count} Spuren gefunden",
+    notAnalyzed: "Nicht analysiert",
+  },
+  fr: {
+    language: "Langue",
+    splashTitle: "Séparez chaque voix et instrument.",
+    splashCopy: "Analysez des MP3, prévisualisez les stems en synchronisation, retirez des instruments et exportez un mix propre.",
+    start: "Démarrer DeTrace",
+    licenseText: "Ce projet est open source et disponible sous licence MIT.",
+    authorText: "Auteur : Roberto Raimondo - IS Senior Systems Engineer II",
+    rightsText: "© 2026 Tous droits réservés.",
+    appTitle: "Séparateur de stems et mixeur MP3",
+    installTools: "Installer les outils",
+    dropTitle: "Déposez un MP3 ici",
+    dropHint: "ou choisissez un fichier pour analyser les voix et instruments.",
+    chooseMp3: "Choisir MP3",
+    original: "Original",
+    selectedPreview: "Aperçu des instruments sélectionnés",
+    playSelected: "Lire la sélection",
+    stop: "Arrêter",
+    stemModel: "Modèle de stems",
+    model6: "6 stems : voix, batterie, basse, guitare, piano, autre",
+    model4: "4 stems : voix, batterie, basse, autre",
+    analyzeAgain: "Analyser à nouveau",
+    exportMp3: "Exporter MP3",
+    uploads: "Téléversements",
+    clear: "Effacer",
+    session: "Session",
+    ready: "prêt",
+    missing: "manquant",
+    select: "Sélectionner",
+    emptyUploads: "Aucun fichier téléversé.",
+    tracksFound: "{count} pistes trouvées",
+    notAnalyzed: "Non analysé",
+  },
+  pt: {
+    language: "Idioma",
+    splashTitle: "Separe cada voz e instrumento.",
+    splashCopy: "Analise faixas MP3, pré-visualize stems sincronizados, remova instrumentos e exporte uma mistura limpa.",
+    start: "Iniciar DeTrace",
+    licenseText: "Este projeto é open source e está disponível sob a licença MIT.",
+    authorText: "Autor: Roberto Raimondo - IS Senior Systems Engineer II",
+    rightsText: "© 2026 Todos os direitos reservados.",
+    appTitle: "Separador de stems e mixer MP3",
+    installTools: "Instalar ferramentas",
+    dropTitle: "Solte um MP3 aqui",
+    dropHint: "ou escolha um arquivo para analisar vozes e instrumentos.",
+    chooseMp3: "Escolher MP3",
+    original: "Original",
+    selectedPreview: "Prévia dos instrumentos selecionados",
+    playSelected: "Reproduzir selecionados",
+    stop: "Parar",
+    stemModel: "Modelo de stems",
+    model6: "6 stems: vocais, bateria, baixo, guitarra, piano, outros",
+    model4: "4 stems: vocais, bateria, baixo, outros",
+    analyzeAgain: "Analisar novamente",
+    exportMp3: "Exportar MP3",
+    uploads: "Uploads",
+    clear: "Limpar",
+    session: "Sessão",
+    ready: "pronto",
+    missing: "ausente",
+    select: "Selecionar",
+    emptyUploads: "Nenhum arquivo enviado.",
+    tracksFound: "{count} faixas encontradas",
+    notAnalyzed: "Não analisado",
+  },
+  zh: {
+    language: "语言",
+    splashTitle: "分离每一种人声和乐器。",
+    splashCopy: "分析 MP3，同步预览音轨，移除乐器，并导出干净的自定义混音。",
+    start: "启动 DeTrace",
+    licenseText: "本项目为开源项目，采用 MIT 许可证。",
+    authorText: "作者：Roberto Raimondo - IS Senior Systems Engineer II",
+    rightsText: "© 2026 保留所有权利。",
+    appTitle: "音轨分离器和 MP3 混音器",
+    installTools: "安装工具",
+    dropTitle: "将 MP3 拖到这里",
+    dropHint: "或选择文件来分析人声和乐器。",
+    chooseMp3: "选择 MP3",
+    original: "原始音频",
+    selectedPreview: "所选乐器预览",
+    playSelected: "播放所选",
+    stop: "停止",
+    stemModel: "音轨模型",
+    model6: "6 轨：人声、鼓、贝斯、吉他、钢琴、其他",
+    model4: "4 轨：人声、鼓、贝斯、其他",
+    analyzeAgain: "重新分析",
+    exportMp3: "导出 MP3",
+    uploads: "上传",
+    clear: "清除",
+    session: "会话",
+    ready: "就绪",
+    missing: "缺失",
+    select: "选择",
+    emptyUploads: "尚未上传文件。",
+    tracksFound: "找到 {count} 条音轨",
+    notAnalyzed: "未分析",
+  },
+  ja: {
+    language: "言語",
+    splashTitle: "すべての声と楽器を分離します。",
+    splashCopy: "MP3 を解析し、ステムを同期プレビューし、楽器を除去してきれいなミックスを書き出します。",
+    start: "DeTrace を開始",
+    licenseText: "このプロジェクトはオープンソースで、MIT ライセンスで提供されています。",
+    authorText: "作者: Roberto Raimondo - IS Senior Systems Engineer II",
+    rightsText: "© 2026 All Rights Reserved.",
+    appTitle: "ステム分離と MP3 ミキサー",
+    installTools: "ツールをインストール",
+    dropTitle: "MP3 をここにドロップ",
+    dropHint: "またはファイルを選んで声と楽器を解析します。",
+    chooseMp3: "MP3 を選択",
+    original: "オリジナル",
+    selectedPreview: "選択した楽器のプレビュー",
+    playSelected: "選択を再生",
+    stop: "停止",
+    stemModel: "ステムモデル",
+    model6: "6 ステム: ボーカル、ドラム、ベース、ギター、ピアノ、その他",
+    model4: "4 ステム: ボーカル、ドラム、ベース、その他",
+    analyzeAgain: "再解析",
+    exportMp3: "MP3 を書き出し",
+    uploads: "アップロード",
+    clear: "クリア",
+    session: "セッション",
+    ready: "準備完了",
+    missing: "不足",
+    select: "選択",
+    emptyUploads: "アップロードされたファイルはありません。",
+    tracksFound: "{count} トラック検出",
+    notAnalyzed: "未解析",
+  },
+  ko: {
+    language: "언어",
+    splashTitle: "모든 보컬과 악기를 분리합니다.",
+    splashCopy: "MP3를 분석하고 스템을 동기화해 미리 듣고, 악기를 제거한 뒤 깨끗한 믹스를 내보냅니다.",
+    start: "DeTrace 시작",
+    licenseText: "이 프로젝트는 오픈 소스이며 MIT 라이선스로 제공됩니다.",
+    authorText: "작성자: Roberto Raimondo - IS Senior Systems Engineer II",
+    rightsText: "© 2026 모든 권리 보유.",
+    appTitle: "스템 분리기 및 MP3 믹서",
+    installTools: "도구 설치",
+    dropTitle: "MP3를 여기에 놓기",
+    dropHint: "또는 파일을 선택해 보컬과 악기를 분석하세요.",
+    chooseMp3: "MP3 선택",
+    original: "원본",
+    selectedPreview: "선택한 악기 미리 듣기",
+    playSelected: "선택 재생",
+    stop: "정지",
+    stemModel: "스템 모델",
+    model6: "6 스템: 보컬, 드럼, 베이스, 기타, 피아노, 기타",
+    model4: "4 스템: 보컬, 드럼, 베이스, 기타",
+    analyzeAgain: "다시 분석",
+    exportMp3: "MP3 내보내기",
+    uploads: "업로드",
+    clear: "지우기",
+    session: "세션",
+    ready: "준비됨",
+    missing: "없음",
+    select: "선택",
+    emptyUploads: "아직 업로드된 파일이 없습니다.",
+    tracksFound: "{count}개 트랙 발견",
+    notAnalyzed: "분석 안 됨",
+  },
+  ar: {
+    language: "اللغة",
+    splashTitle: "افصل كل صوت وكل آلة.",
+    splashCopy: "حلّل ملفات MP3، واستمع إلى المسارات بتزامن، واحذف الآلات، ثم صدّر مزيجًا نظيفًا.",
+    start: "بدء DeTrace",
+    licenseText: "هذا المشروع مفتوح المصدر ومتاح بموجب ترخيص MIT.",
+    authorText: "المؤلف: Roberto Raimondo - IS Senior Systems Engineer II",
+    rightsText: "© 2026 جميع الحقوق محفوظة.",
+    appTitle: "فاصل المسارات ومزج MP3",
+    installTools: "تثبيت الأدوات",
+    dropTitle: "أسقط ملف MP3 هنا",
+    dropHint: "أو اختر ملفًا لتحليل الأصوات والآلات.",
+    chooseMp3: "اختيار MP3",
+    original: "الأصل",
+    selectedPreview: "معاينة الآلات المحددة",
+    playSelected: "تشغيل المحدد",
+    stop: "إيقاف",
+    stemModel: "نموذج المسارات",
+    model6: "6 مسارات: غناء، طبول، باس، غيتار، بيانو، أخرى",
+    model4: "4 مسارات: غناء، طبول، باس، أخرى",
+    analyzeAgain: "تحليل مجددًا",
+    exportMp3: "تصدير MP3",
+    uploads: "التحميلات",
+    clear: "مسح",
+    session: "الجلسة",
+    ready: "جاهز",
+    missing: "مفقود",
+    select: "تحديد",
+    emptyUploads: "لا توجد ملفات محملة بعد.",
+    tracksFound: "تم العثور على {count} مسارات",
+    notAnalyzed: "غير محلل",
+  },
+  hi: {
+    language: "भाषा",
+    splashTitle: "हर आवाज़ और वाद्य अलग करें।",
+    splashCopy: "MP3 ट्रैक का विश्लेषण करें, stems को साथ सुनें, वाद्य हटाएँ और साफ़ कस्टम मिक्स निर्यात करें।",
+    start: "DeTrace शुरू करें",
+    licenseText: "यह प्रोजेक्ट open source है और MIT License के अंतर्गत उपलब्ध है।",
+    authorText: "लेखक: Roberto Raimondo - IS Senior Systems Engineer II",
+    rightsText: "© 2026 सर्वाधिकार सुरक्षित।",
+    appTitle: "Stem separator और MP3 mixer",
+    installTools: "Tools install करें",
+    dropTitle: "MP3 यहाँ छोड़ें",
+    dropHint: "या आवाज़ और वाद्य विश्लेषण करने के लिए फ़ाइल चुनें।",
+    chooseMp3: "MP3 चुनें",
+    original: "मूल",
+    selectedPreview: "चयनित वाद्य preview",
+    playSelected: "चयनित चलाएँ",
+    stop: "रोकें",
+    stemModel: "Stem model",
+    model6: "6 stems: vocals, drums, bass, guitar, piano, other",
+    model4: "4 stems: vocals, drums, bass, other",
+    analyzeAgain: "फिर विश्लेषण करें",
+    exportMp3: "MP3 export करें",
+    uploads: "Uploads",
+    clear: "साफ़ करें",
+    session: "Session",
+    ready: "तैयार",
+    missing: "अनुपलब्ध",
+    select: "चुनें",
+    emptyUploads: "अभी कोई फ़ाइल upload नहीं है।",
+    tracksFound: "{count} tracks मिले",
+    notAnalyzed: "विश्लेषित नहीं",
+  },
+  ru: {
+    language: "Язык",
+    splashTitle: "Разделяйте каждый голос и инструмент.",
+    splashCopy: "Анализируйте MP3, прослушивайте дорожки синхронно, удаляйте инструменты и экспортируйте чистый микс.",
+    start: "Запустить DeTrace",
+    licenseText: "Этот проект открыт и доступен по лицензии MIT.",
+    authorText: "Автор: Roberto Raimondo - IS Senior Systems Engineer II",
+    rightsText: "© 2026 Все права защищены.",
+    appTitle: "Разделитель stem-дорожек и MP3-микшер",
+    installTools: "Установить инструменты",
+    dropTitle: "Перетащите MP3 сюда",
+    dropHint: "или выберите файл для анализа вокала и инструментов.",
+    chooseMp3: "Выбрать MP3",
+    original: "Оригинал",
+    selectedPreview: "Просмотр выбранных инструментов",
+    playSelected: "Воспроизвести выбранное",
+    stop: "Стоп",
+    stemModel: "Модель stems",
+    model6: "6 stems: вокал, ударные, бас, гитара, пианино, другое",
+    model4: "4 stems: вокал, ударные, бас, другое",
+    analyzeAgain: "Анализировать снова",
+    exportMp3: "Экспорт MP3",
+    uploads: "Загрузки",
+    clear: "Очистить",
+    session: "Сессия",
+    ready: "готово",
+    missing: "нет",
+    select: "Выбрать",
+    emptyUploads: "Файлы еще не загружены.",
+    tracksFound: "Найдено дорожек: {count}",
+    notAnalyzed: "Не анализировано",
+  },
+};
+
+const toolLabels = {
+  demucs: "Demucs",
+  ffmpeg: "FFmpeg",
+  codecs: "Codecs",
+};
+
+let currentLanguage = localStorage.getItem("detrace-language") || "en";
 
 const visualizer = {
   context: null,
   nodes: new WeakMap(),
   frame: 0,
 };
+
+function t(key, values = {}) {
+  const text = translations[currentLanguage]?.[key] || translations.en[key] || key;
+  return Object.entries(values).reduce((output, [name, value]) => {
+    return output.replaceAll(`{${name}}`, String(value));
+  }, text);
+}
+
+function applyLanguage() {
+  document.documentElement.lang = currentLanguage;
+  document.documentElement.dir = currentLanguage === "ar" ? "rtl" : "ltr";
+  els.languageSelect.value = currentLanguage;
+  for (const element of document.querySelectorAll("[data-i18n]")) {
+    element.textContent = t(element.dataset.i18n);
+  }
+  updateTools(state.tools);
+  renderJobs();
+  renderStems();
+  localStorage.setItem("detrace-language", currentLanguage);
+}
 
 function setAudioSource(audio, src) {
   audio.pause();
@@ -60,12 +501,13 @@ function setBusy(button, busy, label) {
 }
 
 function updateTools(tools = {}) {
+  state.tools = tools || {};
   for (const badge of els.toolStatus.querySelectorAll("[data-tool]")) {
     const name = badge.dataset.tool;
     const ready = Boolean(tools[name]);
     badge.classList.toggle("ready", ready);
     badge.classList.toggle("missing", !ready);
-    badge.textContent = `${badge.textContent.split(" ")[0]} ${ready ? "ready" : "missing"}`;
+    badge.textContent = `${toolLabels[name] || name} ${ready ? t("ready") : t("missing")}`;
   }
   els.installToolsBtn.hidden = toolsReady(tools);
 }
@@ -82,19 +524,19 @@ function toolsReady(tools = {}) {
 }
 
 async function installTools() {
-  setBusy(els.installToolsBtn, true, "Installing...");
-  log("Installing missing audio tools. This can take a few minutes...");
+  setBusy(els.installToolsBtn, true, t("installing"));
+  log(t("installingTools"));
   try {
     const response = await fetch("/api/install-tools", { method: "POST" });
     const data = await response.json();
     updateTools(data.tools);
-    if (!response.ok) throw new Error(data.details || data.error || "Tool installation failed.");
-    const installed = data.installed && data.installed.length ? data.installed.join(", ") : "nothing new";
-    log(`Tool installation complete: ${installed}.`, "success");
+    if (!response.ok) throw new Error(data.details || data.error || t("toolInstallFailed"));
+    const installed = data.installed && data.installed.length ? data.installed.join(", ") : t("nothingNew");
+    log(t("toolInstallComplete", { installed }), "success");
     return data.tools;
   } finally {
     els.installToolsBtn.disabled = false;
-    els.installToolsBtn.textContent = "Install Tools";
+    els.installToolsBtn.textContent = t("installTools");
   }
 }
 
@@ -108,7 +550,7 @@ async function ensureToolsReady() {
 async function loadJobs() {
   const response = await fetch("/api/jobs");
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Could not load uploads.");
+  if (!response.ok) throw new Error(data.error || t("couldNotLoadUploads"));
   state.jobs = data.jobs;
   updateTools(data.tools);
   renderJobs();
@@ -116,13 +558,13 @@ async function loadJobs() {
 
 async function clearUploads() {
   if (!state.jobs.length) return;
-  const confirmed = window.confirm("Clear all uploaded MP3s and analyzed tracks?");
+  const confirmed = window.confirm(t("clearConfirm"));
   if (!confirmed) return;
 
   stopMix();
   const response = await fetch("/api/jobs", { method: "DELETE" });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Could not clear uploads.");
+  if (!response.ok) throw new Error(data.error || t("couldNotClearUploads"));
 
   state.jobId = "";
   state.file = null;
@@ -139,7 +581,7 @@ async function clearUploads() {
   els.stopMixBtn.disabled = true;
   updateTools(data.tools);
   renderJobs();
-  log("Uploaded MP3 list cleared.", "success");
+  log(t("uploadsCleared"), "success");
 }
 
 function renderJobs() {
@@ -147,7 +589,7 @@ function renderJobs() {
   if (!state.jobs.length) {
     const empty = document.createElement("p");
     empty.className = "emptyUploads";
-    empty.textContent = "No uploaded files yet.";
+    empty.textContent = t("emptyUploads");
     els.uploadList.append(empty);
     return;
   }
@@ -164,7 +606,7 @@ function renderJobs() {
 
     const meta = document.createElement("span");
     meta.className = "uploadMeta";
-    meta.textContent = job.analyzed ? `${job.stems.length} tracks found` : "Not analyzed";
+    meta.textContent = job.analyzed ? t("tracksFound", { count: job.stems.length }) : t("notAnalyzed");
 
     button.append(title, meta);
     button.addEventListener("click", () => selectJob(job));
@@ -191,10 +633,10 @@ async function selectJob(job) {
   try {
     const response = await fetch(`/api/jobs/${job.jobId}`);
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Could not load uploaded file.");
+    if (!response.ok) throw new Error(data.error || t("couldNotLoadUploaded"));
     updateTools(data.tools);
     loadJobIntoView(data.job);
-    log(`Loaded ${data.job.filename}.`, "success");
+    log(t("loaded", { filename: data.job.filename }), "success");
   } catch (error) {
     log(error.message, "error");
   }
@@ -212,7 +654,7 @@ async function uploadFile(file) {
   els.exportBtn.disabled = true;
   els.playMixBtn.disabled = true;
   els.stopMixBtn.disabled = true;
-  log(`Uploading ${file.name}...`);
+  log(t("uploading", { filename: file.name }));
 
   const response = await fetch("/api/upload", {
     method: "POST",
@@ -220,7 +662,7 @@ async function uploadFile(file) {
     body: file,
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Upload failed.");
+  if (!response.ok) throw new Error(data.error || t("uploadFailed"));
 
   state.jobId = data.jobId;
   state.filename = data.filename;
@@ -229,7 +671,7 @@ async function uploadFile(file) {
   updateTools(data.tools);
   state.jobs = [{ ...data, stems: [], analyzed: false }, ...state.jobs.filter((job) => job.jobId !== data.jobId)];
   renderJobs();
-  log("Upload complete. Analyzing instruments now...", "success");
+  log(t("uploadComplete"), "success");
   if (await ensureToolsReady()) {
     await separate();
   }
@@ -237,13 +679,13 @@ async function uploadFile(file) {
 
 async function separate() {
   const model = els.modelSelect.value;
-  setBusy(els.separateBtn, true, "Analyzing...");
+  setBusy(els.separateBtn, true, t("analyzing"));
   els.exportBtn.disabled = true;
   els.playMixBtn.disabled = true;
   els.stopMixBtn.disabled = true;
   els.stems.innerHTML = "";
   els.stems.setAttribute("aria-busy", "true");
-  log(`Analyzing the MP3 with ${model}. This can take a few minutes.`);
+  log(t("analyzingWithModel", { model }));
 
   try {
     const response = await fetch("/api/separate", {
@@ -256,7 +698,7 @@ async function separate() {
     if (response.status === 424 && await ensureToolsReady()) {
       return separate();
     }
-    if (!response.ok) throw new Error(data.details || data.error || "Separation failed.");
+    if (!response.ok) throw new Error(data.details || data.error || t("separationFailed"));
 
     state.stems = data.stems.map((stem) => ({ ...stem, active: true }));
     renderStems();
@@ -264,12 +706,12 @@ async function separate() {
     els.playMixBtn.disabled = false;
     els.stopMixBtn.disabled = false;
     await loadJobs();
-    log(`Found ${state.stems.length} tracks: ${state.stems.map((stem) => stem.name).join(", ")}.`, "success");
+    log(t("foundTracks", { count: state.stems.length, tracks: state.stems.map((stem) => stem.name).join(", ") }), "success");
   } catch (error) {
     log(error.message, "error");
   } finally {
     els.separateBtn.disabled = false;
-    els.separateBtn.textContent = "Analyze Again";
+    els.separateBtn.textContent = t("analyzeAgain");
     els.stems.removeAttribute("aria-busy");
   }
 }
@@ -298,7 +740,7 @@ function renderStems() {
       stem.active = checkbox.checked;
       syncPlayers();
     });
-    toggle.append(checkbox, "Select");
+    toggle.append(checkbox, t("select"));
 
     const audio = document.createElement("audio");
     audio.controls = true;
@@ -369,8 +811,8 @@ function currentMixTime() {
 }
 
 async function exportMix() {
-  setBusy(els.exportBtn, true, "Exporting...");
-  log("Exporting selected tracks to MP3...");
+  setBusy(els.exportBtn, true, t("exporting"));
+  log(t("exportingTracks"));
 
   try {
     const active = state.stems.filter((stem) => stem.active).map((stem) => stem.name);
@@ -384,21 +826,21 @@ async function exportMix() {
     if (response.status === 424 && await ensureToolsReady()) {
       return exportMix();
     }
-    if (!response.ok) throw new Error(data.details || data.error || "Export failed.");
+    if (!response.ok) throw new Error(data.details || data.error || t("exportFailed"));
 
     await saveExport(data.url, data.filename);
-    log("MP3 export downloaded.", "success");
+    log(t("exportDownloaded"), "success");
   } catch (error) {
     log(error.message, "error");
   } finally {
     els.exportBtn.disabled = false;
-    els.exportBtn.textContent = "Export MP3";
+    els.exportBtn.textContent = t("exportMp3");
   }
 }
 
 async function saveExport(url, filename) {
   const response = await fetch(url);
-  if (!response.ok) throw new Error("Could not download exported MP3.");
+  if (!response.ok) throw new Error(t("couldNotDownload"));
   const blob = await response.blob();
 
   if ("showSaveFilePicker" in window) {
@@ -546,6 +988,11 @@ els.playMixBtn.addEventListener("click", playMix);
 els.stopMixBtn.addEventListener("click", stopMix);
 els.clearUploadsBtn.addEventListener("click", () => clearUploads().catch((error) => log(error.message, "error")));
 els.installToolsBtn.addEventListener("click", () => installTools().catch((error) => log(error.message, "error")));
+els.languageSelect.addEventListener("change", () => {
+  currentLanguage = els.languageSelect.value;
+  applyLanguage();
+});
 
-getStatus().catch(() => log("Could not read tool status.", "error"));
+applyLanguage();
+getStatus().catch(() => log(t("couldNotReadStatus"), "error"));
 loadJobs().catch((error) => log(error.message, "error"));

@@ -13,13 +13,13 @@
       </div>
       <div class="splashContent">
         <p class="eyebrow">DeTrace</p>
-        <h1>Separate every voice and instrument.</h1>
-        <p class="splashCopy">Analyze MP3 tracks, preview stems in sync, remove instruments, and export a clean custom mix.</p>
-        <button id="startAppBtn" class="startButton" type="button">Start DeTrace</button>
+        <h1 data-i18n="splashTitle">Separate every voice and instrument.</h1>
+        <p class="splashCopy" data-i18n="splashCopy">Analyze MP3 tracks, preview stems in sync, remove instruments, and export a clean custom mix.</p>
+        <button id="startAppBtn" class="startButton" type="button" data-i18n="start">Start DeTrace</button>
         <div class="splashCredits">
-          <p>This project is open source and available under the MIT License.</p>
-          <p>Author: Roberto Raimondo - IS Senior Systems Engineer II</p>
-          <p>© 2026 All Rights Reserved.</p>
+          <p data-i18n="licenseText">This project is open source and available under the MIT License.</p>
+          <p data-i18n="authorText">Author: Roberto Raimondo - IS Senior Systems Engineer II</p>
+          <p data-i18n="rightsText">© 2026 All Rights Reserved.</p>
         </div>
       </div>
     </section>
@@ -28,52 +28,69 @@
         <header class="topbar">
           <div>
             <p class="eyebrow">DeTrace</p>
-            <h1>Stem separator and MP3 mixer</h1>
+            <h1 data-i18n="appTitle">Stem separator and MP3 mixer</h1>
           </div>
           <div class="toolCluster">
+            <label class="languageControl" for="languageSelect">
+              <span data-i18n="language">Language</span>
+              <select id="languageSelect" aria-label="Language">
+                <option value="en">English</option>
+                <option value="it">Italiano</option>
+                <option value="es">Español</option>
+                <option value="de">Deutsch</option>
+                <option value="fr">Français</option>
+                <option value="pt">Português</option>
+                <option value="zh">中文</option>
+                <option value="ja">日本語</option>
+                <option value="ko">한국어</option>
+                <option value="ar">العربية</option>
+                <option value="hi">हिन्दी</option>
+                <option value="ru">Русский</option>
+              </select>
+            </label>
             <div class="status" id="toolStatus">
               <span data-tool="demucs">Demucs</span>
               <span data-tool="ffmpeg">FFmpeg</span>
               <span data-tool="codecs">Codecs</span>
             </div>
-            <button id="installToolsBtn" class="installButton" type="button" hidden>Install Tools</button>
+            <button id="installToolsBtn" class="installButton" type="button" hidden data-i18n="installTools">Install Tools</button>
           </div>
         </header>
 
         <section class="dropzone" id="dropzone">
           <input id="fileInput" type="file" accept="audio/mpeg,.mp3">
           <div>
-            <strong>Drop an MP3 here</strong>
-            <span>or choose a file to analyze vocals and instruments.</span>
+            <strong data-i18n="dropTitle">Drop an MP3 here</strong>
+            <span data-i18n="dropHint">or choose a file to analyze vocals and instruments.</span>
           </div>
-          <button id="chooseBtn" type="button">Choose MP3</button>
+          <button id="chooseBtn" type="button" data-i18n="chooseMp3">Choose MP3</button>
         </section>
 
         <section class="transport" aria-label="Audio preview">
           <div>
-            <label>Original</label>
+            <label data-i18n="original">Original</label>
             <audio id="sourcePlayer" controls></audio>
           </div>
           <div>
-            <label>Selected instrument preview</label>
+            <label data-i18n="selectedPreview">Selected instrument preview</label>
             <div class="mixPreview">
-              <button id="playMixBtn" type="button" disabled>Play Selected</button>
-              <button id="stopMixBtn" type="button" disabled>Stop</button>
+              <button id="playMixBtn" type="button" disabled data-i18n="playSelected">Play Selected</button>
+              <button id="stopMixBtn" type="button" disabled data-i18n="stop">Stop</button>
             </div>
           </div>
         </section>
 
         <section class="modelBar" aria-label="Separation model">
-          <label for="modelSelect">Stem model</label>
+          <label for="modelSelect" data-i18n="stemModel">Stem model</label>
           <select id="modelSelect">
-            <option value="htdemucs_6s" selected>6 stems: vocals, drums, bass, guitar, piano, other</option>
-            <option value="htdemucs">4 stems: vocals, drums, bass, other</option>
+            <option value="htdemucs_6s" selected data-i18n="model6">6 stems: vocals, drums, bass, guitar, piano, other</option>
+            <option value="htdemucs" data-i18n="model4">4 stems: vocals, drums, bass, other</option>
           </select>
         </section>
 
         <section class="actions">
-          <button id="separateBtn" type="button" disabled>Analyze Again</button>
-          <button id="exportBtn" type="button" disabled>Export MP3</button>
+          <button id="separateBtn" type="button" disabled data-i18n="analyzeAgain">Analyze Again</button>
+          <button id="exportBtn" type="button" disabled data-i18n="exportMp3">Export MP3</button>
         </section>
 
         <section class="stems" id="stems" aria-label="Separated tracks"></section>
@@ -83,19 +100,19 @@
         </section>
 
         <footer class="appFooter">
-          <p>This project is open source and available under the MIT License.</p>
-          <p>Author: Roberto Raimondo - IS Senior Systems Engineer II</p>
-          <p>© 2026 All Rights Reserved.</p>
+          <p data-i18n="licenseText">This project is open source and available under the MIT License.</p>
+          <p data-i18n="authorText">Author: Roberto Raimondo - IS Senior Systems Engineer II</p>
+          <p data-i18n="rightsText">© 2026 All Rights Reserved.</p>
         </footer>
       </section>
 
       <aside class="panel">
         <div class="panelHeader">
-          <h2>Uploads</h2>
-          <button id="clearUploadsBtn" class="clearButton" type="button">Clear</button>
+          <h2 data-i18n="uploads">Uploads</h2>
+          <button id="clearUploadsBtn" class="clearButton" type="button" data-i18n="clear">Clear</button>
         </div>
         <div class="uploadList" id="uploadList"></div>
-        <h2 class="sessionTitle">Session</h2>
+        <h2 class="sessionTitle" data-i18n="session">Session</h2>
         <ol id="log"></ol>
       </aside>
     </main>

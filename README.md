@@ -19,6 +19,8 @@ The app uses:
 - [Demucs](https://github.com/facebookresearch/demucs) for source separation when installed.
 - FFmpeg, or the bundled `imageio-ffmpeg` fallback, for mixing/exporting MP3 files.
 
+The interface includes a language selector with English, Italian, Spanish, German, French, Portuguese, Chinese, Japanese, Korean, Arabic, Hindi, and Russian.
+
 ## Quick start
 
 Build the Windows executable:

@@ -169,8 +169,17 @@ audio {
 
 .toolCluster {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   justify-items: end;
+}
+
+.languageControl {
+  display: grid;
+  grid-template-columns: auto minmax(140px, 190px);
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  color: var(--muted);
 }
 
 .eyebrow {
@@ -371,7 +380,8 @@ audio {
   margin: 0;
 }
 
-.modelBar select {
+.modelBar select,
+.languageControl select {
   width: 100%;
   min-height: 42px;
   border: 1px solid var(--line);
@@ -381,6 +391,11 @@ audio {
   color: var(--ink);
   font: inherit;
   font-weight: 700;
+}
+
+.languageControl select {
+  min-height: 34px;
+  font-size: 13px;
 }
 
 .stems {
@@ -578,6 +593,10 @@ audio {
 
   .toolCluster {
     justify-items: start;
+  }
+
+  .languageControl {
+    grid-template-columns: 1fr;
   }
 }
 
