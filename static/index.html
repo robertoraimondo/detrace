@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
@@ -7,22 +7,6 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <section class="splash" id="splash" aria-label="DeTrace start screen">
-      <div class="splashVisual">
-        <img src="/splash-notes.svg" alt="Abstract music notes over flowing audio waves">
-      </div>
-      <div class="splashContent">
-        <p class="eyebrow">DeTrace</p>
-        <h1 data-i18n="splashTitle">Separate every voice and instrument.</h1>
-        <p class="splashCopy" data-i18n="splashCopy">Analyze MP3 tracks, preview stems in sync, remove instruments, and export a clean custom mix.</p>
-        <button id="startAppBtn" class="startButton" type="button" data-i18n="start">Start DeTrace</button>
-        <div class="splashCredits">
-          <p data-i18n="licenseText">This project is open source and available under the MIT License.</p>
-          <p data-i18n="authorText">Author: Roberto Raimondo - IS Senior Systems Engineer II</p>
-          <p data-i18n="rightsText">© 2026 All Rights Reserved.</p>
-        </div>
-      </div>
-    </section>
     <main class="app">
       <section class="workspace">
         <header class="topbar">
@@ -36,24 +20,24 @@
               <select id="languageSelect" aria-label="Language">
                 <option value="en">English</option>
                 <option value="it">Italiano</option>
-                <option value="es">Español</option>
+                <option value="es">EspaÃ±ol</option>
                 <option value="de">Deutsch</option>
-                <option value="fr">Français</option>
-                <option value="pt">Português</option>
-                <option value="zh">中文</option>
-                <option value="ja">日本語</option>
-                <option value="ko">한국어</option>
-                <option value="ar">العربية</option>
-                <option value="hi">हिन्दी</option>
-                <option value="ru">Русский</option>
+                <option value="fr">FranÃ§ais</option>
+                <option value="pt">PortuguÃªs</option>
+                <option value="zh">ä¸­æ–‡</option>
+                <option value="ja">æ—¥æœ¬èªž</option>
+                <option value="ko">í•œêµ­ì–´</option>
+                <option value="ar">Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©</option>
+                <option value="hi">à¤¹à¤¿à¤¨à¥à¤¦à¥€</option>
+                <option value="ru">Ð ÑƒÑÑÐºÐ¸Ð¹</option>
               </select>
             </label>
             <div class="status" id="toolStatus">
               <span data-tool="demucs">Demucs</span>
               <span data-tool="ffmpeg">FFmpeg</span>
               <span data-tool="codecs">Codecs</span>
+              <span data-tool="chords">Chords</span>
             </div>
-            <button id="installToolsBtn" class="installButton" type="button" hidden data-i18n="installTools">Install Tools</button>
           </div>
         </header>
 
@@ -95,6 +79,14 @@
 
         <section class="stems" id="stems" aria-label="Separated tracks"></section>
 
+        <section class="chordPanel" aria-label="Song chords">
+          <div class="chordHeader">
+            <h2 data-i18n="chords">Chords</h2>
+            <span id="currentChord" data-i18n="noChord">No chord</span>
+          </div>
+          <div class="chordTimeline" id="chordTimeline"></div>
+        </section>
+
         <section class="spectrumPanel" aria-label="Audio spectrum">
           <canvas id="spectrumCanvas" width="1200" height="180"></canvas>
         </section>
@@ -102,7 +94,7 @@
         <footer class="appFooter">
           <p data-i18n="licenseText">This project is open source and available under the MIT License.</p>
           <p data-i18n="authorText">Author: Roberto Raimondo - IS Senior Systems Engineer II</p>
-          <p data-i18n="rightsText">© 2026 All Rights Reserved.</p>
+          <p data-i18n="rightsText">Â© 2026 All Rights Reserved.</p>
         </footer>
       </section>
 

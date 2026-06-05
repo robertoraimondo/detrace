@@ -5,6 +5,7 @@ const state = {
   sourceUrl: "",
   stems: [],
   players: [],
+  chords: [],
   mixPlaying: false,
   mixStartedAt: 0,
   jobs: [],
@@ -25,8 +26,9 @@ const els = {
   stems: document.querySelector("#stems"),
   uploadList: document.querySelector("#uploadList"),
   spectrumCanvas: document.querySelector("#spectrumCanvas"),
+  chordTimeline: document.querySelector("#chordTimeline"),
+  currentChord: document.querySelector("#currentChord"),
   clearUploadsBtn: document.querySelector("#clearUploadsBtn"),
-  installToolsBtn: document.querySelector("#installToolsBtn"),
   modelSelect: document.querySelector("#modelSelect"),
   languageSelect: document.querySelector("#languageSelect"),
   log: document.querySelector("#log"),
@@ -56,6 +58,14 @@ const translations = {
     model4: "4 stems: vocals, drums, bass, other",
     analyzeAgain: "Analyze Again",
     exportMp3: "Export MP3",
+    extractChords: "Extract Chords",
+    chords: "Chords",
+    noChord: "No chord",
+    detectingChords: "Detecting...",
+    detectingChordsLog: "Extracting chords from the original MP3...",
+    chordsReady: "Found {count} chord changes.",
+    noChordsFound: "No clear chords found.",
+    chordDetectionFailed: "Chord detection failed.",
     uploads: "Uploads",
     clear: "Clear",
     session: "Session",
@@ -112,6 +122,9 @@ const translations = {
     model4: "4 tracce: voce, batteria, basso, altro",
     analyzeAgain: "Analizza di nuovo",
     exportMp3: "Esporta MP3",
+    extractChords: "Estrai accordi",
+    chords: "Accordi",
+    noChord: "Nessun accordo",
     uploads: "Caricamenti",
     clear: "Pulisci",
     session: "Sessione",
@@ -144,6 +157,9 @@ const translations = {
     model4: "4 stems: voz, batería, bajo, otros",
     analyzeAgain: "Analizar otra vez",
     exportMp3: "Exportar MP3",
+    extractChords: "Extraer acordes",
+    chords: "Acordes",
+    noChord: "Sin acorde",
     uploads: "Subidas",
     clear: "Borrar",
     session: "Sesión",
@@ -176,6 +192,9 @@ const translations = {
     model4: "4 Stems: Gesang, Schlagzeug, Bass, Sonstiges",
     analyzeAgain: "Erneut analysieren",
     exportMp3: "MP3 exportieren",
+    extractChords: "Akkorde erkennen",
+    chords: "Akkorde",
+    noChord: "Kein Akkord",
     uploads: "Uploads",
     clear: "Leeren",
     session: "Sitzung",
@@ -208,6 +227,9 @@ const translations = {
     model4: "4 stems : voix, batterie, basse, autre",
     analyzeAgain: "Analyser à nouveau",
     exportMp3: "Exporter MP3",
+    extractChords: "Extraire les accords",
+    chords: "Accords",
+    noChord: "Aucun accord",
     uploads: "Téléversements",
     clear: "Effacer",
     session: "Session",
@@ -240,6 +262,9 @@ const translations = {
     model4: "4 stems: vocais, bateria, baixo, outros",
     analyzeAgain: "Analisar novamente",
     exportMp3: "Exportar MP3",
+    extractChords: "Extrair acordes",
+    chords: "Acordes",
+    noChord: "Sem acorde",
     uploads: "Uploads",
     clear: "Limpar",
     session: "Sessão",
@@ -272,6 +297,9 @@ const translations = {
     model4: "4 轨：人声、鼓、贝斯、其他",
     analyzeAgain: "重新分析",
     exportMp3: "导出 MP3",
+    extractChords: "提取和弦",
+    chords: "和弦",
+    noChord: "无和弦",
     uploads: "上传",
     clear: "清除",
     session: "会话",
@@ -304,6 +332,9 @@ const translations = {
     model4: "4 ステム: ボーカル、ドラム、ベース、その他",
     analyzeAgain: "再解析",
     exportMp3: "MP3 を書き出し",
+    extractChords: "コードを抽出",
+    chords: "コード",
+    noChord: "コードなし",
     uploads: "アップロード",
     clear: "クリア",
     session: "セッション",
@@ -336,6 +367,9 @@ const translations = {
     model4: "4 스템: 보컬, 드럼, 베이스, 기타",
     analyzeAgain: "다시 분석",
     exportMp3: "MP3 내보내기",
+    extractChords: "코드 추출",
+    chords: "코드",
+    noChord: "코드 없음",
     uploads: "업로드",
     clear: "지우기",
     session: "세션",
@@ -368,6 +402,9 @@ const translations = {
     model4: "4 مسارات: غناء، طبول، باس، أخرى",
     analyzeAgain: "تحليل مجددًا",
     exportMp3: "تصدير MP3",
+    extractChords: "استخراج الأوتار",
+    chords: "الأوتار",
+    noChord: "لا وتر",
     uploads: "التحميلات",
     clear: "مسح",
     session: "الجلسة",
@@ -400,6 +437,9 @@ const translations = {
     model4: "4 stems: vocals, drums, bass, other",
     analyzeAgain: "फिर विश्लेषण करें",
     exportMp3: "MP3 export करें",
+    extractChords: "Chords निकालें",
+    chords: "Chords",
+    noChord: "कोई chord नहीं",
     uploads: "Uploads",
     clear: "साफ़ करें",
     session: "Session",
@@ -432,6 +472,9 @@ const translations = {
     model4: "4 stems: вокал, ударные, бас, другое",
     analyzeAgain: "Анализировать снова",
     exportMp3: "Экспорт MP3",
+    extractChords: "Извлечь аккорды",
+    chords: "Аккорды",
+    noChord: "Нет аккорда",
     uploads: "Загрузки",
     clear: "Очистить",
     session: "Сессия",
@@ -448,6 +491,7 @@ const toolLabels = {
   demucs: "Demucs",
   ffmpeg: "FFmpeg",
   codecs: "Codecs",
+  chords: "Chords",
 };
 
 let currentLanguage = localStorage.getItem("detrace-language") || "en";
@@ -456,6 +500,7 @@ const visualizer = {
   context: null,
   nodes: new WeakMap(),
   frame: 0,
+  chordFrame: 0,
 };
 
 function t(key, values = {}) {
@@ -475,6 +520,7 @@ function applyLanguage() {
   updateTools(state.tools);
   renderJobs();
   renderStems();
+  renderChords();
   localStorage.setItem("detrace-language", currentLanguage);
 }
 
@@ -485,6 +531,7 @@ function setAudioSource(audio, src) {
   audio.addEventListener("play", () => {
     ensureAudioNode(audio);
     startSpectrum();
+    startChordTracking();
   }, { once: true });
 }
 
@@ -497,6 +544,8 @@ function log(message, type = "") {
 
 function setBusy(button, busy, label) {
   button.disabled = busy;
+  button.classList.toggle("working", busy);
+  button.setAttribute("aria-busy", busy ? "true" : "false");
   if (label) button.textContent = label;
 }
 
@@ -509,7 +558,6 @@ function updateTools(tools = {}) {
     badge.classList.toggle("missing", !ready);
     badge.textContent = `${toolLabels[name] || name} ${ready ? t("ready") : t("missing")}`;
   }
-  els.installToolsBtn.hidden = toolsReady(tools);
 }
 
 async function getStatus() {
@@ -520,31 +568,18 @@ async function getStatus() {
 }
 
 function toolsReady(tools = {}) {
-  return Boolean(tools.demucs && tools.ffmpeg && tools.codecs);
-}
-
-async function installTools() {
-  setBusy(els.installToolsBtn, true, t("installing"));
-  log(t("installingTools"));
-  try {
-    const response = await fetch("/api/install-tools", { method: "POST" });
-    const data = await response.json();
-    updateTools(data.tools);
-    if (!response.ok) throw new Error(data.details || data.error || t("toolInstallFailed"));
-    const installed = data.installed && data.installed.length ? data.installed.join(", ") : t("nothingNew");
-    log(t("toolInstallComplete", { installed }), "success");
-    return data.tools;
-  } finally {
-    els.installToolsBtn.disabled = false;
-    els.installToolsBtn.textContent = t("installTools");
-  }
+  return Boolean(tools.demucs && tools.ffmpeg && tools.codecs && tools.chords);
 }
 
 async function ensureToolsReady() {
   const tools = await getStatus();
   if (toolsReady(tools)) return true;
-  const installed = await installTools();
-  return toolsReady(installed);
+  const missing = Object.entries(toolLabels)
+    .filter(([key]) => !tools[key])
+    .map(([, label]) => label)
+    .join(", ");
+  log(`Missing requirements: ${missing}. Run setup or install requirements before using DeTrace.`, "error");
+  return false;
 }
 
 async function loadJobs() {
@@ -571,6 +606,7 @@ async function clearUploads() {
   state.filename = "";
   state.sourceUrl = "";
   state.stems = [];
+  state.chords = [];
   state.players = [];
   state.jobs = [];
   setAudioSource(els.sourcePlayer, "");
@@ -581,6 +617,7 @@ async function clearUploads() {
   els.stopMixBtn.disabled = true;
   updateTools(data.tools);
   renderJobs();
+  renderChords();
   log(t("uploadsCleared"), "success");
 }
 
@@ -621,8 +658,10 @@ function loadJobIntoView(job) {
   state.sourceUrl = job.sourceUrl;
   state.file = null;
   state.stems = (job.stems || []).map((stem) => ({ ...stem, active: true }));
+  state.chords = [];
   setAudioSource(els.sourcePlayer, job.sourceUrl);
   renderStems();
+  renderChords();
   syncPlayers();
   els.separateBtn.disabled = false;
   els.stopMixBtn.disabled = !state.stems.length;
@@ -646,8 +685,10 @@ async function uploadFile(file) {
   state.file = file;
   state.filename = file.name;
   state.stems = [];
+  state.chords = [];
   state.players = [];
   els.stems.innerHTML = "";
+  renderChords();
   els.stems.setAttribute("aria-busy", "true");
   setAudioSource(els.sourcePlayer, URL.createObjectURL(file));
   els.separateBtn.disabled = true;
@@ -677,6 +718,16 @@ async function uploadFile(file) {
   }
 }
 
+async function postJson(url, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  return { response, data };
+}
+
 async function separate() {
   const model = els.modelSelect.value;
   setBusy(els.separateBtn, true, t("analyzing"));
@@ -684,33 +735,47 @@ async function separate() {
   els.playMixBtn.disabled = true;
   els.stopMixBtn.disabled = true;
   els.stems.innerHTML = "";
+  state.chords = [];
+  renderChords();
   els.stems.setAttribute("aria-busy", "true");
   log(t("analyzingWithModel", { model }));
+  log(t("detectingChordsLog"));
 
   try {
-    const response = await fetch("/api/separate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jobId: state.jobId, model }),
-    });
-    const data = await response.json();
-    updateTools(data.tools);
-    if (response.status === 424 && await ensureToolsReady()) {
+    const [stemResult, chordResult] = await Promise.all([
+      postJson("/api/separate", { jobId: state.jobId, model }),
+      postJson("/api/chords", { jobId: state.jobId }),
+    ]);
+    updateTools({ ...(stemResult.data.tools || {}), ...(chordResult.data.tools || {}) });
+
+    if ((stemResult.response.status === 424 || chordResult.response.status === 424) && await ensureToolsReady()) {
       return separate();
     }
-    if (!response.ok) throw new Error(data.details || data.error || t("separationFailed"));
+    if (!stemResult.response.ok) {
+      throw new Error(stemResult.data.details || stemResult.data.error || t("separationFailed"));
+    }
 
-    state.stems = data.stems.map((stem) => ({ ...stem, active: true }));
+    state.stems = stemResult.data.stems.map((stem) => ({ ...stem, active: true }));
     renderStems();
     els.exportBtn.disabled = false;
     els.playMixBtn.disabled = false;
     els.stopMixBtn.disabled = false;
+
+    if (chordResult.response.ok) {
+      state.chords = chordResult.data.chords || [];
+      renderChords();
+      log(state.chords.length ? t("chordsReady", { count: state.chords.length }) : t("noChordsFound"), "success");
+    } else {
+      renderChords();
+      log(chordResult.data.details || chordResult.data.error || t("chordDetectionFailed"), "error");
+    }
+
     await loadJobs();
     log(t("foundTracks", { count: state.stems.length, tracks: state.stems.map((stem) => stem.name).join(", ") }), "success");
   } catch (error) {
     log(error.message, "error");
   } finally {
-    els.separateBtn.disabled = false;
+    setBusy(els.separateBtn, false);
     els.separateBtn.textContent = t("analyzeAgain");
     els.stems.removeAttribute("aria-busy");
   }
@@ -760,6 +825,74 @@ function renderStems() {
   }
 }
 
+function renderChords() {
+  els.chordTimeline.innerHTML = "";
+  els.currentChord.textContent = t("noChord");
+  if (!state.chords.length) {
+    const empty = document.createElement("p");
+    empty.className = "emptyChords";
+    empty.textContent = t("noChordsFound");
+    els.chordTimeline.append(empty);
+    return;
+  }
+
+  const total = Math.max(...state.chords.map((chord) => chord.end), 1);
+  for (const chord of state.chords) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "chordItem";
+    button.dataset.start = chord.start;
+    button.dataset.end = chord.end;
+    button.style.flexGrow = Math.max(chord.end - chord.start, 0.35);
+    button.innerHTML = `<strong>${chord.chord}</strong><span>${formatTime(chord.start)}</span>`;
+    button.title = `${formatTime(chord.start)} - ${formatTime(chord.end)}`;
+    button.addEventListener("click", () => {
+      els.sourcePlayer.currentTime = Math.min(chord.start, total);
+      els.sourcePlayer.play().catch((error) => log(error.message, "error"));
+    });
+    els.chordTimeline.append(button);
+  }
+  updateCurrentChord();
+}
+
+function formatTime(seconds) {
+  const whole = Math.max(0, Math.floor(Number(seconds) || 0));
+  const minutes = Math.floor(whole / 60);
+  return `${minutes}:${String(whole % 60).padStart(2, "0")}`;
+}
+
+function updateCurrentChord() {
+  const time = state.mixPlaying ? currentMixTime() : els.sourcePlayer.currentTime || 0;
+  let activeIndex = -1;
+  for (let index = 0; index < state.chords.length; index += 1) {
+    if (time >= state.chords[index].start) activeIndex = index;
+  }
+  const active = activeIndex >= 0 ? state.chords[activeIndex] : null;
+  els.currentChord.textContent = active ? active.chord : t("noChord");
+  for (const [index, item] of [...els.chordTimeline.querySelectorAll(".chordItem")].entries()) {
+    const start = Number(item.dataset.start);
+    const isActive = index === activeIndex;
+    item.classList.toggle("active", isActive);
+    item.classList.toggle("played", time >= start);
+    item.setAttribute("aria-current", isActive ? "true" : "false");
+  }
+}
+
+function startChordTracking() {
+  if (visualizer.chordFrame) return;
+  trackChords();
+}
+
+function trackChords() {
+  updateCurrentChord();
+  const sourcePlaying = !els.sourcePlayer.paused && !els.sourcePlayer.ended;
+  if (sourcePlaying || state.mixPlaying) {
+    visualizer.chordFrame = requestAnimationFrame(trackChords);
+  } else {
+    visualizer.chordFrame = 0;
+  }
+}
+
 function syncPlayers() {
   const hasSelection = state.stems.some((stem) => stem.active);
   els.exportBtn.disabled = !hasSelection;
@@ -788,6 +921,7 @@ async function playMix() {
     audio.currentTime = 0;
   }
   startSpectrum();
+  startChordTracking();
   await Promise.all(activePlayers.map(({ audio }) => audio.play()));
 }
 
@@ -798,6 +932,7 @@ function stopMix() {
   }
   state.mixPlaying = false;
   state.mixStartedAt = 0;
+  updateCurrentChord();
 }
 
 function currentMixTime() {
@@ -833,7 +968,7 @@ async function exportMix() {
   } catch (error) {
     log(error.message, "error");
   } finally {
-    els.exportBtn.disabled = false;
+    setBusy(els.exportBtn, false);
     els.exportBtn.textContent = t("exportMp3");
   }
 }
@@ -954,8 +1089,8 @@ function drawSpectrumCanvas(canvas, node, active) {
 }
 
 els.chooseBtn.addEventListener("click", () => els.fileInput.click());
-els.startAppBtn.addEventListener("click", () => {
-  els.splash.classList.add("hidden");
+els.startAppBtn?.addEventListener("click", () => {
+  els.splash?.classList.add("hidden");
 });
 
 els.fileInput.addEventListener("change", () => {
@@ -986,8 +1121,12 @@ els.separateBtn.addEventListener("click", separate);
 els.exportBtn.addEventListener("click", exportMix);
 els.playMixBtn.addEventListener("click", playMix);
 els.stopMixBtn.addEventListener("click", stopMix);
+els.sourcePlayer.addEventListener("play", startChordTracking);
+els.sourcePlayer.addEventListener("timeupdate", updateCurrentChord);
+els.sourcePlayer.addEventListener("seeked", updateCurrentChord);
+els.sourcePlayer.addEventListener("pause", updateCurrentChord);
+els.sourcePlayer.addEventListener("ended", updateCurrentChord);
 els.clearUploadsBtn.addEventListener("click", () => clearUploads().catch((error) => log(error.message, "error")));
-els.installToolsBtn.addEventListener("click", () => installTools().catch((error) => log(error.message, "error")));
 els.languageSelect.addEventListener("change", () => {
   currentLanguage = els.languageSelect.value;
   applyLanguage();

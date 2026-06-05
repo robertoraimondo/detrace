@@ -131,11 +131,13 @@ def refresh_requirement_status(ui: dict, runtime_python: Path | None = None) -> 
             if check_module(runtime_python, "lameenc") and check_module(runtime_python, "soundfile")
             else "Missing",
         )
+        ui_item(ui, "chords", "Present" if check_module(runtime_python, "librosa") else "Missing")
         ui_item(ui, "desktop", "Present" if check_module(runtime_python, "webview") else "Missing")
     else:
         ui_item(ui, "demucs", "Waiting for runtime")
         ui_item(ui, "ffmpeg", "Waiting for runtime")
         ui_item(ui, "codecs", "Waiting for runtime")
+        ui_item(ui, "chords", "Waiting for runtime")
         ui_item(ui, "desktop", "Waiting for runtime")
 
 
@@ -297,71 +299,38 @@ def animate_busy(ui: dict) -> None:
 def main() -> None:
     root = tk.Tk()
     root.title("DeTrace")
-    root.geometry("640x680")
-    root.resizable(False, False)
+    root.geometry("1920x1080")
+    root.resizable(True, True)
     root.attributes("-topmost", True)
     root.configure(bg="#0c181c")
+    root.state("zoomed")
 
-    status = tk.StringVar(value="Choose how to run DeTrace.")
+    status = tk.StringVar(value="Preparing DeTrace.")
     items = {
         "python": tk.StringVar(value="Checking"),
         "runtime": tk.StringVar(value="Checking"),
         "demucs": tk.StringVar(value="Checking"),
         "ffmpeg": tk.StringVar(value="Checking"),
         "codecs": tk.StringVar(value="Checking"),
+        "chords": tk.StringVar(value="Checking"),
         "desktop": tk.StringVar(value="Checking"),
     }
 
     splash = tk.Frame(root, bg="#10242a")
     setup = tk.Frame(root, bg="#eef3f2")
 
-    art = tk.Canvas(splash, width=600, height=312, highlightthickness=0, bg="#10242a")
-    art.pack(fill="x")
-    draw_splash_art(art)
+    splash_art = load_launcher_art()
+    root._detrace_images = (splash_art,)
 
-    tk.Label(
-        splash,
-        text="DeTrace",
-        bg="#10242a",
-        fg="#f8fbf9",
-        font=("Segoe UI", 30, "bold"),
-    ).pack(pady=(20, 4))
-    tk.Label(
-        splash,
-        text="Separate every voice and instrument.",
-        bg="#10242a",
-        fg="#d3e1df",
-        font=("Segoe UI", 13),
-    ).pack(pady=(0, 18))
-    tk.Button(
-        splash,
-        text="Continue",
-        command=lambda: show_setup(),
-        bg="#f0a33a",
-        fg="#10242a",
-        activebackground="#f8ca70",
-        activeforeground="#10242a",
-        relief="flat",
-        padx=24,
-        pady=10,
-        font=("Segoe UI", 11, "bold"),
-    ).pack(pady=(0, 24))
-    credits = tk.Frame(splash, bg="#10242a")
-    credits.pack(fill="x", padx=42)
-    for text in (
-        "This project is open source and available under the MIT License.",
-        "Author: Roberto Raimondo - IS Senior Systems Engineer II",
-        "© 2026 All Rights Reserved.",
-    ):
-        tk.Label(credits, text=text, bg="#10242a", fg="#a9bbbb", font=("Segoe UI", 9)).pack(anchor="w", pady=1)
-
+    splash_image = tk.Label(splash, image=splash_art, bg="#10242a", borderwidth=0, cursor="hand2")
+    splash_image.pack(fill="both", expand=True)
     header = tk.Frame(setup, bg="#10242a")
     header.pack(fill="x")
     tk.Label(header, text="DeTrace", bg="#10242a", fg="#f8fbf9", font=("Segoe UI", 22, "bold")).pack(
         anchor="w", padx=34, pady=(24, 2)
     )
     tk.Label(header, textvariable=status, bg="#10242a", fg="#c8d7d7", font=("Segoe UI", 10)).pack(
-        anchor="w", padx=36, pady=(0, 22)
+        anchor="w", padx=36, pady=(0, 24)
     )
 
     progress_wrap = tk.Frame(setup, bg="#eef3f2")
@@ -379,6 +348,7 @@ def main() -> None:
         ("Demucs separation engine", "demucs"),
         ("FFmpeg codec/export support", "ffmpeg"),
         ("MP3/audio codecs", "codecs"),
+        ("Chord detection engine", "chords"),
         ("Desktop window support", "desktop"),
     ]
     for row, (label, key) in enumerate(labels):
@@ -393,7 +363,6 @@ def main() -> None:
     checklist.columnconfigure(0, weight=1)
 
     actions = tk.Frame(setup, bg="#eef3f2")
-    actions.pack(fill="x", padx=36, pady=(18, 0))
     desktop_btn = tk.Button(
         actions,
         text="Desktop App",
@@ -418,8 +387,6 @@ def main() -> None:
         pady=12,
         font=("Segoe UI", 10, "bold"),
     )
-    desktop_btn.pack(side="left", expand=True, fill="x", padx=(0, 8))
-    web_btn.pack(side="left", expand=True, fill="x", padx=(8, 0))
 
     ui = {
         "root": root,
@@ -433,15 +400,22 @@ def main() -> None:
         "web_btn": web_btn,
     }
 
+    setup_started = {"value": False}
+
     def show_setup() -> None:
+        if setup_started["value"]:
+            return
+        setup_started["value"] = True
         splash.pack_forget()
         setup.pack(fill="both", expand=True)
-        center_window(root)
+        root.state("zoomed")
         refresh_requirement_status(ui, venv_python() if venv_python().exists() else None)
+        threading.Thread(target=work, args=("desktop",), daemon=True).start()
 
+    splash_image.bind("<Button-1>", lambda _event: show_setup())
     splash.pack(fill="both", expand=True)
     root.update_idletasks()
-    center_window(root)
+    root.state("zoomed")
     root.lift()
     root.focus_force()
 
@@ -487,55 +461,15 @@ def center_window(root: tk.Tk) -> None:
     root.geometry(f"{width}x{height}+{x}+{y}")
 
 
-def draw_splash_art(canvas: tk.Canvas) -> None:
-    for index in range(34):
-        ratio = index / 33
-        red = int(16 + ratio * 174)
-        green = int(36 + ratio * 116)
-        blue = int(42 - ratio * 5)
-        color = f"#{red:02x}{green:02x}{blue:02x}"
-        canvas.create_rectangle(0, index * 10, 600, (index + 1) * 10, fill=color, outline=color)
-
-    canvas.create_oval(50, 36, 210, 196, fill="#7edbd3", outline="", stipple="gray50")
-    canvas.create_oval(424, 28, 650, 254, fill="#f8ca70", outline="", stipple="gray50")
-    canvas.create_oval(326, 202, 506, 382, fill="#c95f4f", outline="", stipple="gray50")
-
-    waves = [
-        (210, "#f8fbf9", 4),
-        (238, "#9be7df", 5),
-        (266, "#f8ca70", 4),
-    ]
-    for y, color, width in waves:
-        points = []
-        for x in range(-20, 641, 44):
-            offset = 30 if (x // 44) % 2 else -24
-            points.extend([x, y + offset])
-        canvas.create_line(*points, fill=color, width=width, smooth=True, capstyle="round")
-
-    draw_note(canvas, 302, 58, 1.0, -8)
-    draw_note(canvas, 120, 134, 0.68, 10)
-    draw_note(canvas, 472, 154, 0.58, -14)
-
-
-def draw_note(canvas: tk.Canvas, x: int, y: int, scale: float, angle: int) -> None:
-    # Tk canvas has no grouped rotation, so this draws a stylized upright note.
-    stem_h = int(150 * scale)
-    stem_w = max(8, int(14 * scale))
-    head_w = int(80 * scale)
-    head_h = int(48 * scale)
-    canvas.create_rectangle(x + 58, y, x + 58 + stem_w, y + stem_h, fill="#f8fbf9", outline="")
-    canvas.create_oval(x, y + stem_h - 12, x + head_w, y + stem_h + head_h, fill="#f8fbf9", outline="")
-    canvas.create_arc(
-        x + 58,
-        y + 4,
-        x + int(154 * scale),
-        y + int(96 * scale),
-        start=278,
-        extent=250,
-        style="arc",
-        outline="#f8fbf9",
-        width=max(8, int(12 * scale)),
-    )
+def load_launcher_art() -> tk.PhotoImage:
+    image_path = BUNDLE_DIR / "static" / "start-splash.png"
+    if not image_path.exists():
+        image_path = INSTALL_DIR / "static" / "start-splash.png"
+    if not image_path.exists():
+        image_path = BUNDLE_DIR / "static" / "launcher-splash.png"
+    if not image_path.exists():
+        image_path = INSTALL_DIR / "static" / "launcher-splash.png"
+    return tk.PhotoImage(file=str(image_path))
 
 
 if __name__ == "__main__":

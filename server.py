@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import uuid
+from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
@@ -78,6 +79,7 @@ def tool_status() -> dict:
         "demucs": demucs_command() is not None,
         "ffmpeg": ffmpeg_executable() is not None,
         "codecs": codec_status(),
+        "chords": module_available("librosa"),
     }
 
 
@@ -100,6 +102,8 @@ def install_tools(handler: BaseHTTPRequestHandler) -> None:
         packages.append("imageio-ffmpeg")
     if not before["codecs"]:
         packages.extend(["lameenc", "soundfile"])
+    if not before["chords"]:
+        packages.append("librosa")
 
     if not packages:
         json_response(handler, 200, {"tools": before, "installed": [], "message": "All tools are already available."})
@@ -308,6 +312,121 @@ def separate(handler: BaseHTTPRequestHandler) -> None:
     json_response(handler, 200, {"jobId": job_id, "stems": stems, "tools": tools})
 
 
+def chord_templates() -> dict[str, list[float]]:
+    major = (0, 4, 7)
+    minor = (0, 3, 7)
+    names = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+    templates = {}
+    for root, name in enumerate(names):
+        for suffix, intervals in (("", major), ("m", minor)):
+            template = [0.0] * 12
+            for interval in intervals:
+                template[(root + interval) % 12] = 1.0
+            templates[f"{name}{suffix}"] = template
+    return templates
+
+
+def normalize_vector(values) -> object:
+    import numpy as np
+
+    vector = np.asarray(values, dtype=float)
+    norm = np.linalg.norm(vector)
+    if norm == 0:
+        return vector
+    return vector / norm
+
+
+def best_chord(frame, templates: dict[str, list[float]]) -> str:
+    frame_vector = normalize_vector(frame)
+    best_name = "N"
+    best_score = 0.0
+    for name, template in templates.items():
+        score = float(frame_vector @ normalize_vector(template))
+        if score > best_score:
+            best_score = score
+            best_name = name
+    return best_name if best_score >= 0.62 else "N"
+
+
+def merge_chords(frame_chords: list[str], times: list[float], duration: float) -> list[dict]:
+    if not frame_chords:
+        return []
+
+    segments = []
+    start = float(times[0])
+    current = frame_chords[0]
+    for index, chord in enumerate(frame_chords[1:], start=1):
+        if chord == current:
+            continue
+        end = float(times[index])
+        if current != "N" and end - start >= 0.35:
+            segments.append({"start": round(start, 2), "end": round(end, 2), "chord": current})
+        start = end
+        current = chord
+
+    end = float(duration)
+    if current != "N" and end - start >= 0.35:
+        segments.append({"start": round(start, 2), "end": round(end, 2), "chord": current})
+
+    smoothed = []
+    for segment in segments:
+        if smoothed and smoothed[-1]["chord"] == segment["chord"] and segment["start"] - smoothed[-1]["end"] <= 0.25:
+            smoothed[-1]["end"] = segment["end"]
+        else:
+            smoothed.append(segment)
+    return smoothed
+
+
+def detect_chords(audio_path: Path) -> list[dict]:
+    import librosa
+    import numpy as np
+
+    y, sr = librosa.load(str(audio_path), mono=True, duration=900)
+    if y.size == 0:
+        return []
+
+    chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=4096)
+    times = librosa.frames_to_time(np.arange(chroma.shape[1]), sr=sr, hop_length=4096)
+    templates = chord_templates()
+    raw_chords = [best_chord(chroma[:, index], templates) for index in range(chroma.shape[1])]
+
+    smoothed = []
+    for index, chord in enumerate(raw_chords):
+        window = raw_chords[max(0, index - 1) : min(len(raw_chords), index + 2)]
+        smoothed.append(Counter(window).most_common(1)[0][0])
+
+    return merge_chords(smoothed, times.tolist(), librosa.get_duration(y=y, sr=sr))
+
+
+def chords(handler: BaseHTTPRequestHandler) -> None:
+    payload = read_json(handler)
+    job_id = payload.get("jobId", "")
+    upload_match = next(UPLOADS.glob(f"{job_id}-*.mp3"), None)
+    if not upload_match:
+        json_response(handler, 404, {"error": "Uploaded file was not found."})
+        return
+
+    tools = tool_status()
+    if not tools["chords"]:
+        json_response(
+            handler,
+            424,
+            {
+                "error": "Chord detection requires librosa. Use Install Tools, then extract chords again.",
+                "tools": tools,
+            },
+        )
+        return
+
+    try:
+        segments = detect_chords(upload_match)
+    except Exception as exc:
+        json_response(handler, 500, {"error": "Chord detection failed.", "details": str(exc), "tools": tools})
+        return
+
+    json_response(handler, 200, {"jobId": job_id, "chords": segments, "tools": tools})
+
+
 def export_mix(handler: BaseHTTPRequestHandler) -> None:
     payload = read_json(handler)
     job_id = payload.get("jobId", "")
@@ -404,6 +523,9 @@ class AppHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/export":
             export_mix(self)
+            return
+        if parsed.path == "/api/chords":
+            chords(self)
             return
         if parsed.path == "/api/install-tools":
             install_tools(self)

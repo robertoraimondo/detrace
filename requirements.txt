@@ -3,3 +3,4 @@ imageio-ffmpeg
 lameenc
 soundfile
 pywebview
+librosa
