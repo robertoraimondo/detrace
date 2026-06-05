@@ -2,6 +2,9 @@
 
 DeTrace is a local desktop app for separating an MP3 into vocal and instrument stems, muting/removing individual tracks, previewing the remaining mix, and exporting a new MP3.
 
+<img width="1900" height="1022" alt="image" src="https://github.com/user-attachments/assets/a64ef440-370b-4e36-b438-03b416b9efff" />
+
+
 The app uses:
 
 - A desktop launcher executable.
