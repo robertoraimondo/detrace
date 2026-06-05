@@ -26,15 +26,14 @@ const els = {
   spectrumCanvas: document.querySelector("#spectrumCanvas"),
   clearUploadsBtn: document.querySelector("#clearUploadsBtn"),
   installToolsBtn: document.querySelector("#installToolsBtn"),
+  modelSelect: document.querySelector("#modelSelect"),
   log: document.querySelector("#log"),
   toolStatus: document.querySelector("#toolStatus"),
 };
 
 const visualizer = {
   context: null,
-  analyser: null,
-  data: null,
-  sources: new WeakMap(),
+  nodes: new WeakMap(),
   frame: 0,
 };
 
@@ -237,19 +236,20 @@ async function uploadFile(file) {
 }
 
 async function separate() {
+  const model = els.modelSelect.value;
   setBusy(els.separateBtn, true, "Analyzing...");
   els.exportBtn.disabled = true;
   els.playMixBtn.disabled = true;
   els.stopMixBtn.disabled = true;
   els.stems.innerHTML = "";
   els.stems.setAttribute("aria-busy", "true");
-  log("Analyzing the MP3 and detecting separated instrument tracks. This can take a few minutes.");
+  log(`Analyzing the MP3 with ${model}. This can take a few minutes.`);
 
   try {
     const response = await fetch("/api/separate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jobId: state.jobId, model: "htdemucs" }),
+      body: JSON.stringify({ jobId: state.jobId, model }),
     });
     const data = await response.json();
     updateTools(data.tools);
@@ -305,10 +305,16 @@ function renderStems() {
     audio.preload = "metadata";
     setAudioSource(audio, stem.url);
 
+    const canvas = document.createElement("canvas");
+    canvas.className = "stemSpectrum";
+    canvas.width = 520;
+    canvas.height = 92;
+    drawSpectrumCanvas(canvas, null, false);
+
     header.append(name, toggle);
-    card.append(header, audio);
+    card.append(header, audio, canvas);
     els.stems.append(card);
-    state.players.push({ stem, audio });
+    state.players.push({ stem, audio, canvas });
   }
 }
 
@@ -429,20 +435,21 @@ function ensureAudioNode(audio) {
   if (!visualizer.context) {
     const AudioApi = window.AudioContext || window.webkitAudioContext;
     visualizer.context = new AudioApi();
-    visualizer.analyser = visualizer.context.createAnalyser();
-    visualizer.analyser.fftSize = 256;
-    visualizer.analyser.smoothingTimeConstant = 0.78;
-    visualizer.data = new Uint8Array(visualizer.analyser.frequencyBinCount);
-    visualizer.analyser.connect(visualizer.context.destination);
   }
   if (visualizer.context.state === "suspended") {
     visualizer.context.resume();
   }
-  if (!visualizer.sources.has(audio)) {
+  if (!visualizer.nodes.has(audio)) {
+    const analyser = visualizer.context.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.78;
+    const data = new Uint8Array(analyser.frequencyBinCount);
     const source = visualizer.context.createMediaElementSource(audio);
-    source.connect(visualizer.analyser);
-    visualizer.sources.set(audio, source);
+    source.connect(analyser);
+    analyser.connect(visualizer.context.destination);
+    visualizer.nodes.set(audio, { source, analyser, data });
   }
+  return visualizer.nodes.get(audio);
 }
 
 function startSpectrum() {
@@ -452,36 +459,55 @@ function startSpectrum() {
 
 function drawSpectrum() {
   const canvas = els.spectrumCanvas;
-  const context = canvas.getContext("2d");
-  const width = canvas.width;
-  const height = canvas.height;
-  const active = [els.sourcePlayer, ...state.players.map(({ audio }) => audio)].some((audio) => !audio.paused);
+  const activeAudios = [els.sourcePlayer, ...state.players.map(({ audio }) => audio)].filter((audio) => !audio.paused);
+  const active = activeAudios.length > 0;
+  const masterNode = activeAudios.map((audio) => visualizer.nodes.get(audio)).find(Boolean);
 
-  context.clearRect(0, 0, width, height);
-  context.fillStyle = "#11191d";
-  context.fillRect(0, 0, width, height);
+  drawSpectrumCanvas(canvas, masterNode, active);
 
-  if (visualizer.analyser && visualizer.data) {
-    visualizer.analyser.getByteFrequencyData(visualizer.data);
-    const bars = visualizer.data.length;
-    const gap = 3;
-    const barWidth = Math.max(3, (width - gap * bars) / bars);
-
-    for (let index = 0; index < bars; index += 1) {
-      const value = visualizer.data[index] / 255;
-      const barHeight = Math.max(4, value * (height - 28));
-      const x = index * (barWidth + gap);
-      const y = height - barHeight;
-      const hue = 178 + value * 45;
-      context.fillStyle = `hsl(${hue}, 72%, ${42 + value * 28}%)`;
-      context.fillRect(x, y, barWidth, barHeight);
-    }
+  for (const { audio, canvas: stemCanvas } of state.players) {
+    const node = visualizer.nodes.get(audio);
+    drawSpectrumCanvas(stemCanvas, node, !audio.paused);
   }
 
   if (active) {
     visualizer.frame = requestAnimationFrame(drawSpectrum);
   } else {
     visualizer.frame = 0;
+  }
+}
+
+function drawSpectrumCanvas(canvas, node, active) {
+  const context = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "#11191d";
+  context.fillRect(0, 0, width, height);
+
+  if (!node || !active) {
+    context.fillStyle = "rgba(248, 251, 249, 0.18)";
+    const centerY = Math.round(height * 0.5);
+    for (let x = 0; x < width; x += 18) {
+      context.fillRect(x, centerY, 8, 2);
+    }
+    return;
+  }
+
+  node.analyser.getByteFrequencyData(node.data);
+  const bars = node.data.length;
+  const gap = width > 600 ? 3 : 2;
+  const barWidth = Math.max(2, (width - gap * bars) / bars);
+
+  for (let index = 0; index < bars; index += 1) {
+    const value = node.data[index] / 255;
+    const barHeight = Math.max(3, value * (height - 16));
+    const x = index * (barWidth + gap);
+    const y = height - barHeight;
+    const hue = 178 + value * 45;
+    context.fillStyle = `hsl(${hue}, 72%, ${42 + value * 28}%)`;
+    context.fillRect(x, y, barWidth, barHeight);
   }
 }
 

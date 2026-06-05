@@ -22,6 +22,7 @@ EXPORTS = WORKSPACE / "exports"
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("PORT", "5180"))
 MAX_UPLOAD = 250 * 1024 * 1024
+ALLOWED_MODELS = {"htdemucs", "htdemucs_6s"}
 
 
 def ensure_dirs() -> None:
@@ -256,6 +257,9 @@ def separate(handler: BaseHTTPRequestHandler) -> None:
     payload = read_json(handler)
     job_id = payload.get("jobId", "")
     model = payload.get("model", "htdemucs")
+    if model not in ALLOWED_MODELS:
+        json_response(handler, 400, {"error": "Unsupported separation model."})
+        return
     upload_match = next(UPLOADS.glob(f"{job_id}-*.mp3"), None)
     if not upload_match:
         json_response(handler, 404, {"error": "Uploaded file was not found."})

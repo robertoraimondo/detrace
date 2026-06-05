@@ -38,7 +38,8 @@ def main() -> None:
         url,
         width=1280,
         height=860,
-        min_size=(980, 680),
+        min_size=(1280, 760),
+        maximized=True,
     )
     webview.start()
 

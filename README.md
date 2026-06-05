@@ -71,14 +71,21 @@ python -m pip install -r requirements.txt
 
 If system FFmpeg is not installed, DeTrace uses `imageio-ffmpeg`.
 
-Demucs commonly produces these stems:
+By default, DeTrace uses Demucs `htdemucs_6s`, which can produce these stems:
+
+- `vocals`
+- `drums`
+- `bass`
+- `guitar`
+- `piano`
+- `other`
+
+The app also includes the standard `htdemucs` 4-stem option:
 
 - `vocals`
 - `drums`
 - `bass`
 - `other`
-
-Some Demucs models can produce additional stems such as `guitar` and `piano`.
 
 ## Workflow
 
