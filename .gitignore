@@ -1,0 +1,10 @@
+workspace/
+__pycache__/
+*.pyc
+.env
+build/
+dist/
+wheelhouse/
+*.spec
+.detrace-app/
+.detrace-runtime/

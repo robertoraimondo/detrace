@@ -1,0 +1,518 @@
+:root {
+  color-scheme: light;
+  --ink: #172026;
+  --muted: #64707a;
+  --line: #d6dde3;
+  --paper: #eef3f2;
+  --surface: #ffffff;
+  --accent: #0b6f7c;
+  --accent-strong: #074e58;
+  --good: #17834c;
+  --bad: #b43a31;
+  --gold: #b47516;
+  --coral: #c95f4f;
+  --shadow: 0 18px 45px rgba(16, 36, 42, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background:
+    linear-gradient(135deg, rgba(11, 111, 124, 0.10), rgba(240, 163, 58, 0.08)),
+    var(--paper);
+  color: var(--ink);
+}
+
+button,
+input,
+audio {
+  font: inherit;
+}
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(360px, 0.88fr);
+  min-height: 100vh;
+  background: #10242a;
+  color: #f8fbf9;
+}
+
+.splash.hidden {
+  display: none;
+}
+
+.splashVisual {
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.splashVisual img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.splashContent {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(32px, 6vw, 72px);
+  background: linear-gradient(180deg, #122a30, #0c181c);
+}
+
+.splashContent .eyebrow {
+  color: #f8ca70;
+}
+
+.splashContent h1 {
+  max-width: 620px;
+  font-size: clamp(42px, 7vw, 78px);
+  line-height: 0.96;
+}
+
+.splashCopy {
+  max-width: 500px;
+  margin: 22px 0 28px;
+  color: #c8d7d7;
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.startButton {
+  align-self: flex-start;
+  min-height: 52px;
+  padding: 0 24px;
+  background: #f0a33a;
+  color: #10242a;
+  box-shadow: 0 16px 32px rgba(240, 163, 58, 0.22);
+}
+
+.startButton:hover {
+  background: #f8ca70;
+}
+
+.splashCredits {
+  margin-top: 44px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(248, 251, 249, 0.18);
+  color: #a9bbbb;
+  font-size: 13px;
+}
+
+.splashCredits p {
+  margin: 4px 0;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.workspace,
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.workspace {
+  padding: clamp(18px, 3vw, 30px);
+}
+
+.panel {
+  padding: 20px;
+  align-self: start;
+  position: sticky;
+  top: 24px;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.toolCluster {
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--accent);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+h1,
+h2 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+h1 {
+  font-size: clamp(28px, 5vw, 44px);
+  line-height: 1.03;
+  max-width: 760px;
+}
+
+h2 {
+  font-size: 18px;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.status {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.status span {
+  min-width: 92px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.status .ready {
+  border-color: color-mix(in srgb, var(--good), white 60%);
+  color: var(--good);
+  background: color-mix(in srgb, var(--good), white 91%);
+}
+
+.status .missing {
+  border-color: color-mix(in srgb, var(--bad), white 60%);
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad), white 92%);
+}
+
+.dropzone {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  align-items: center;
+  min-height: 170px;
+  border: 2px dashed #8ca5ad;
+  border-radius: 8px;
+  padding: 28px;
+  background:
+    linear-gradient(135deg, rgba(11, 111, 124, 0.08), rgba(240, 163, 58, 0.08)),
+    #fbfcfc;
+}
+
+.dropzone.dragging {
+  border-color: var(--accent);
+  background: #eef8f9;
+}
+
+.dropzone input {
+  display: none;
+}
+
+.dropzone strong {
+  display: block;
+  font-size: 24px;
+  margin-bottom: 6px;
+}
+
+.dropzone span,
+.panel,
+label {
+  color: var(--muted);
+}
+
+button,
+.download {
+  border: 0;
+  border-radius: 8px;
+  min-height: 42px;
+  padding: 0 16px;
+  background: var(--accent);
+  color: white;
+  font-weight: 800;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+button:hover,
+.download:hover {
+  background: var(--accent-strong);
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.clearButton {
+  min-height: 34px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.clearButton:hover {
+  background: #f3f6f6;
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad), white 55%);
+}
+
+.installButton {
+  min-height: 36px;
+  padding: 0 12px;
+  background: var(--gold);
+}
+
+.installButton:hover {
+  background: #8d5c11;
+}
+
+.transport {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin: 24px 0;
+}
+
+.transport > div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: #fbfcfc;
+}
+
+label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+audio {
+  width: 100%;
+}
+
+.mixPreview,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.actions {
+  margin-bottom: 22px;
+}
+
+.stems {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.spectrumPanel {
+  margin-top: 22px;
+  border: 1px solid #23373d;
+  border-radius: 8px;
+  background: #11191d;
+  overflow: hidden;
+  min-height: 130px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.spectrumPanel canvas {
+  display: block;
+  width: 100%;
+  height: 150px;
+}
+
+.appFooter {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.appFooter p {
+  margin: 3px 0;
+}
+
+.stem {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: #fff;
+  box-shadow: 0 10px 26px rgba(16, 36, 42, 0.07);
+}
+
+.stemHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.stemName {
+  margin: 0;
+  font-weight: 900;
+  text-transform: capitalize;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  text-transform: none;
+  margin: 0;
+}
+
+.toggle input {
+  inline-size: 20px;
+  block-size: 20px;
+  accent-color: var(--accent);
+}
+
+.uploadList {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.uploadItem {
+  display: grid;
+  gap: 4px;
+  justify-content: stretch;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: #fbfcfc;
+  color: var(--ink);
+  text-align: left;
+  box-shadow: 0 8px 18px rgba(16, 36, 42, 0.05);
+}
+
+.uploadItem:hover,
+.uploadItem.active {
+  border-color: var(--accent);
+  background: #eef8f9;
+  color: var(--ink);
+}
+
+.uploadName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 900;
+}
+
+.uploadMeta,
+.emptyUploads {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.emptyUploads {
+  margin: 0;
+}
+
+.sessionTitle {
+  margin-top: 24px;
+}
+
+.panel ol {
+  margin: 18px 0 0;
+  padding-left: 20px;
+}
+
+.panel li {
+  margin-bottom: 12px;
+}
+
+.panel .error {
+  color: var(--bad);
+}
+
+.panel .success {
+  color: var(--good);
+}
+
+@media (max-width: 880px) {
+  .splash {
+    grid-template-columns: 1fr;
+  }
+
+  .splashVisual {
+    min-height: 38vh;
+  }
+
+  .splashContent {
+    min-height: 62vh;
+  }
+
+  .app,
+  .transport {
+    grid-template-columns: 1fr;
+  }
+
+  .panel {
+    position: static;
+  }
+
+  .topbar,
+  .dropzone {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .status {
+    justify-content: flex-start;
+  }
+
+  .toolCluster {
+    justify-items: start;
+  }
+}
