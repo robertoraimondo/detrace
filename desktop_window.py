@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import socket
 import threading
+import time
 from pathlib import Path
 
 import webview
@@ -27,6 +28,18 @@ def run_server(port: int) -> None:
     server.start_server()
 
 
+class AppApi:
+    def exit_app(self) -> dict[str, bool]:
+        def close() -> None:
+            time.sleep(0.1)
+            server.stop_server()
+            for window in webview.windows:
+                window.destroy()
+
+        threading.Thread(target=close, daemon=True).start()
+        return {"ok": True}
+
+
 def main() -> None:
     port = find_free_port()
     thread = threading.Thread(target=run_server, args=(port,), daemon=True)
@@ -36,12 +49,16 @@ def main() -> None:
     webview.create_window(
         "DeTrace",
         url,
+        js_api=AppApi(),
         width=1280,
         height=860,
         min_size=(1280, 760),
         maximized=True,
     )
-    webview.start()
+    try:
+        webview.start()
+    finally:
+        server.stop_server()
 
 
 if __name__ == "__main__":

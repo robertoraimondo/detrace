@@ -6,8 +6,10 @@ const state = {
   stems: [],
   players: [],
   chords: [],
+  activeChordIndex: -1,
   mixPlaying: false,
   mixStartedAt: 0,
+  mixPausedAt: 0,
   jobs: [],
   tools: {},
 };
@@ -16,18 +18,22 @@ const els = {
   dropzone: document.querySelector("#dropzone"),
   fileInput: document.querySelector("#fileInput"),
   chooseBtn: document.querySelector("#chooseBtn"),
+  exitBtn: document.querySelector("#exitBtn"),
   sourcePlayer: document.querySelector("#sourcePlayer"),
   splash: document.querySelector("#splash"),
   startAppBtn: document.querySelector("#startAppBtn"),
   separateBtn: document.querySelector("#separateBtn"),
   exportBtn: document.querySelector("#exportBtn"),
   playMixBtn: document.querySelector("#playMixBtn"),
+  pauseBtn: document.querySelector("#pauseBtn"),
   stopMixBtn: document.querySelector("#stopMixBtn"),
   stems: document.querySelector("#stems"),
   uploadList: document.querySelector("#uploadList"),
   spectrumCanvas: document.querySelector("#spectrumCanvas"),
   chordTimeline: document.querySelector("#chordTimeline"),
   currentChord: document.querySelector("#currentChord"),
+  pianoKeyboard: document.querySelector("#pianoKeyboard"),
+  selectedSummary: document.querySelector("#selectedSummary"),
   clearUploadsBtn: document.querySelector("#clearUploadsBtn"),
   modelSelect: document.querySelector("#modelSelect"),
   languageSelect: document.querySelector("#languageSelect"),
@@ -52,6 +58,8 @@ const translations = {
     original: "Original",
     selectedPreview: "Selected instrument preview",
     playSelected: "Play Selected",
+    pause: "Pause",
+    resume: "Resume",
     stop: "Stop",
     stemModel: "Stem model",
     model6: "6 stems: vocals, drums, bass, guitar, piano, other",
@@ -93,12 +101,17 @@ const translations = {
     separationFailed: "Separation failed.",
     foundTracks: "Found {count} tracks: {tracks}.",
     select: "Select",
+    noSelection: "No instruments selected",
     exporting: "Exporting...",
     exportingTracks: "Exporting selected tracks to MP3...",
     exportFailed: "Export failed.",
     exportDownloaded: "MP3 export downloaded.",
     couldNotDownload: "Could not download exported MP3.",
     couldNotReadStatus: "Could not read tool status.",
+    exitApp: "Exit",
+    exiting: "Closing DeTrace...",
+    closed: "DeTrace is closed. You can close this tab.",
+    exitFailed: "Could not close DeTrace cleanly.",
   },
   it: {
     language: "Lingua",
@@ -503,6 +516,20 @@ const visualizer = {
   chordFrame: 0,
 };
 
+const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const flatToSharp = {
+  Db: "C#",
+  Eb: "D#",
+  Gb: "F#",
+  Ab: "G#",
+  Bb: "A#",
+};
+const chordIntervals = {
+  major: [0, 4, 7],
+  minor: [0, 3, 7],
+};
+const mixSyncToleranceSeconds = 0.045;
+
 function t(key, values = {}) {
   const text = translations[currentLanguage]?.[key] || translations.en[key] || key;
   return Object.entries(values).reduce((output, [name, value]) => {
@@ -521,13 +548,68 @@ function applyLanguage() {
   renderJobs();
   renderStems();
   renderChords();
+  updateSelectedSummary();
+  updatePauseButton();
   localStorage.setItem("detrace-language", currentLanguage);
+}
+
+function buildPianoKeyboard() {
+  els.pianoKeyboard.innerHTML = "";
+  let whiteIndex = 0;
+  for (let midi = 21; midi <= 108; midi += 1) {
+    const pitchClass = midi % 12;
+    const octave = Math.floor(midi / 12) - 1;
+    const noteName = noteNames[pitchClass];
+    const note = `${noteName}${octave}`;
+    const isBlack = noteName.includes("#");
+    const key = document.createElement("span");
+    key.className = `pianoKey ${isBlack ? "black" : "white"}`;
+    key.dataset.midi = String(midi);
+    key.dataset.pitchClass = String(pitchClass);
+    key.dataset.note = note;
+    key.title = note;
+    key.setAttribute("aria-label", note);
+    key.setAttribute("aria-pressed", "false");
+    if (isBlack) {
+      key.style.setProperty("--black-left", String(whiteIndex));
+    } else {
+      key.style.setProperty("--white-index", String(whiteIndex));
+      whiteIndex += 1;
+    }
+    if (note === "A0" || note === "C4" || note === "C8") {
+      key.textContent = note;
+    }
+    els.pianoKeyboard.append(key);
+  }
+}
+
+function chordMidiNotes(chordName) {
+  const normalized = String(chordName || "");
+  const match = normalized.match(/^([A-G](?:#|b)?)(m?)/);
+  if (!match || normalized === "N") return new Set();
+  const rootName = flatToSharp[match[1]] || match[1];
+  const root = noteNames.indexOf(rootName);
+  if (root < 0) return new Set();
+  const intervals = match[2] === "m" ? chordIntervals.minor : chordIntervals.major;
+  const middleRoot = 60 + root;
+  const rootMidi = middleRoot > 67 ? middleRoot - 12 : middleRoot;
+  return new Set(intervals.map((interval) => rootMidi + interval));
+}
+
+function updatePianoKeyboard(chordName) {
+  const activeMidiNotes = chordMidiNotes(chordName);
+  for (const key of els.pianoKeyboard.querySelectorAll(".pianoKey")) {
+    const isActive = activeMidiNotes.has(Number(key.dataset.midi));
+    key.classList.toggle("active", isActive);
+    key.setAttribute("aria-pressed", isActive ? "true" : "false");
+  }
 }
 
 function setAudioSource(audio, src) {
   audio.pause();
   audio.src = src;
   audio.load();
+  updatePauseButton();
   audio.addEventListener("play", () => {
     ensureAudioNode(audio);
     startSpectrum();
@@ -540,6 +622,64 @@ function log(message, type = "") {
   item.textContent = message;
   if (type) item.className = type;
   els.log.prepend(item);
+}
+
+function showSessionSongTitle(filename) {
+  els.log.innerHTML = "";
+  const item = document.createElement("li");
+  item.className = "success";
+  item.textContent = filename || state.filename || "";
+  els.log.append(item);
+}
+
+function updateSelectedSummary() {
+  const selected = state.stems.filter((stem) => stem.active).map((stem) => stem.name);
+  els.selectedSummary.textContent = selected.length ? selected.join(", ") : t("noSelection");
+}
+
+function stopAllAudio() {
+  stopMix();
+  for (const audio of [els.sourcePlayer, ...state.players.map(({ audio }) => audio)]) {
+    audio.pause();
+    audio.currentTime = 0;
+  }
+}
+
+function disableAppControls() {
+  for (const button of document.querySelectorAll("button")) {
+    button.disabled = true;
+  }
+  els.fileInput.disabled = true;
+  els.modelSelect.disabled = true;
+  els.languageSelect.disabled = true;
+}
+
+async function exitApplication() {
+  stopAllAudio();
+  setBusy(els.exitBtn, true, t("exiting"));
+  disableAppControls();
+  log(t("exiting"));
+
+  try {
+    if (window.pywebview?.api?.exit_app) {
+      await window.pywebview.api.exit_app();
+    } else if (window.pywebview?.api?.exitApp) {
+      await window.pywebview.api.exitApp();
+    } else {
+      await fetch("/api/shutdown", { method: "POST" });
+      window.close();
+    }
+    document.body.classList.add("appClosed");
+    els.log.innerHTML = "";
+    log(t("closed"), "success");
+  } catch (error) {
+    els.exitBtn.disabled = false;
+    els.exitBtn.classList.remove("working");
+    els.fileInput.disabled = false;
+    els.modelSelect.disabled = false;
+    els.languageSelect.disabled = false;
+    log(error.message || t("exitFailed"), "error");
+  }
 }
 
 function setBusy(button, busy, label) {
@@ -607,6 +747,7 @@ async function clearUploads() {
   state.sourceUrl = "";
   state.stems = [];
   state.chords = [];
+  state.activeChordIndex = -1;
   state.players = [];
   state.jobs = [];
   setAudioSource(els.sourcePlayer, "");
@@ -658,7 +799,8 @@ function loadJobIntoView(job) {
   state.sourceUrl = job.sourceUrl;
   state.file = null;
   state.stems = (job.stems || []).map((stem) => ({ ...stem, active: true }));
-  state.chords = [];
+  state.chords = job.chords || [];
+  state.activeChordIndex = -1;
   setAudioSource(els.sourcePlayer, job.sourceUrl);
   renderStems();
   renderChords();
@@ -675,10 +817,29 @@ async function selectJob(job) {
     if (!response.ok) throw new Error(data.error || t("couldNotLoadUploaded"));
     updateTools(data.tools);
     loadJobIntoView(data.job);
-    log(t("loaded", { filename: data.job.filename }), "success");
+    if (data.job.analyzed && !state.chords.length) {
+      await loadChordsForCurrentJob();
+    }
+    showSessionSongTitle(data.job.filename);
   } catch (error) {
     log(error.message, "error");
   }
+}
+
+async function loadChordsForCurrentJob() {
+  log(t("detectingChordsLog"));
+  const chordResult = await postJson("/api/chords", { jobId: state.jobId });
+  updateTools(chordResult.data.tools || {});
+  if (!chordResult.response.ok) {
+    log(chordResult.data.details || chordResult.data.error || t("chordDetectionFailed"), "error");
+    return;
+  }
+  state.chords = chordResult.data.chords || [];
+  renderChords();
+  state.jobs = state.jobs.map((job) => {
+    if (job.jobId !== state.jobId) return job;
+    return { ...job, chords: state.chords };
+  });
 }
 
 async function uploadFile(file) {
@@ -686,6 +847,7 @@ async function uploadFile(file) {
   state.filename = file.name;
   state.stems = [];
   state.chords = [];
+  state.activeChordIndex = -1;
   state.players = [];
   els.stems.innerHTML = "";
   renderChords();
@@ -736,6 +898,7 @@ async function separate() {
   els.stopMixBtn.disabled = true;
   els.stems.innerHTML = "";
   state.chords = [];
+  state.activeChordIndex = -1;
   renderChords();
   els.stems.setAttribute("aria-busy", "true");
   log(t("analyzingWithModel", { model }));
@@ -771,7 +934,11 @@ async function separate() {
     }
 
     await loadJobs();
-    log(t("foundTracks", { count: state.stems.length, tracks: state.stems.map((stem) => stem.name).join(", ") }), "success");
+    state.jobs = state.jobs.map((job) => {
+      if (job.jobId !== state.jobId) return job;
+      return { ...job, stems: state.stems, chords: state.chords, analyzed: true };
+    });
+    showSessionSongTitle(state.filename);
   } catch (error) {
     log(error.message, "error");
   } finally {
@@ -803,6 +970,7 @@ function renderStems() {
     checkbox.checked = stem.active;
     checkbox.addEventListener("change", () => {
       stem.active = checkbox.checked;
+      updateSelectedSummary();
       syncPlayers();
     });
     toggle.append(checkbox, t("select"));
@@ -823,11 +991,72 @@ function renderStems() {
     els.stems.append(card);
     state.players.push({ stem, audio, canvas });
   }
+  updateSelectedSummary();
+}
+
+const passingChordMaxSeconds = 1.6;
+
+function simplifyChords(chords) {
+  const merged = [];
+  for (const chord of chords || []) {
+    const current = {
+      ...chord,
+      start: Number(chord.start) || 0,
+      end: Number(chord.end) || 0,
+    };
+    const previous = merged.at(-1);
+    if (previous && previous.chord === current.chord) {
+      previous.end = Math.max(previous.end, current.end);
+      continue;
+    }
+    merged.push(current);
+  }
+  if (merged.length <= 2) return merged;
+
+  const simplified = [];
+  for (let index = 0; index < merged.length; index += 1) {
+    const chord = merged[index];
+    const duration = Math.max(0, chord.end - chord.start);
+    const previous = simplified.at(-1);
+    const next = merged[index + 1];
+
+    if (duration < passingChordMaxSeconds) {
+      if (previous && next && previous.chord === next.chord) {
+        previous.end = next.end;
+        index += 1;
+        continue;
+      }
+      if (next) {
+        next.start = chord.start;
+        continue;
+      }
+      if (previous) {
+        previous.end = chord.end;
+        continue;
+      }
+    }
+
+    simplified.push({ ...chord });
+  }
+
+  const finalChords = [];
+  for (const chord of simplified) {
+    const previous = finalChords.at(-1);
+    if (previous && previous.chord === chord.chord) {
+      previous.end = chord.end;
+      continue;
+    }
+    finalChords.push(chord);
+  }
+  return finalChords;
 }
 
 function renderChords() {
+  state.chords = simplifyChords(state.chords);
   els.chordTimeline.innerHTML = "";
   els.currentChord.textContent = t("noChord");
+  state.activeChordIndex = -1;
+  updatePianoKeyboard("");
   if (!state.chords.length) {
     const empty = document.createElement("p");
     empty.className = "emptyChords";
@@ -862,13 +1091,21 @@ function formatTime(seconds) {
 }
 
 function updateCurrentChord() {
-  const time = state.mixPlaying ? currentMixTime() : els.sourcePlayer.currentTime || 0;
+  const time = playbackTime();
   let activeIndex = -1;
   for (let index = 0; index < state.chords.length; index += 1) {
-    if (time >= state.chords[index].start) activeIndex = index;
+    const chord = state.chords[index];
+    const next = state.chords[index + 1];
+    const end = Number.isFinite(Number(chord.end)) ? Number(chord.end) : next?.start;
+    if (time >= chord.start && (end === undefined || time < end)) {
+      activeIndex = index;
+      break;
+    }
+    if (time >= chord.start) activeIndex = index;
   }
   const active = activeIndex >= 0 ? state.chords[activeIndex] : null;
   els.currentChord.textContent = active ? active.chord : t("noChord");
+  updatePianoKeyboard(active?.chord || "");
   for (const [index, item] of [...els.chordTimeline.querySelectorAll(".chordItem")].entries()) {
     const start = Number(item.dataset.start);
     const isActive = index === activeIndex;
@@ -876,6 +1113,18 @@ function updateCurrentChord() {
     item.classList.toggle("played", time >= start);
     item.setAttribute("aria-current", isActive ? "true" : "false");
   }
+  if (activeIndex !== state.activeChordIndex) {
+    state.activeChordIndex = activeIndex;
+    const activeItem = els.chordTimeline.querySelector(".chordItem.active");
+    activeItem?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }
+}
+
+function playbackTime() {
+  if (state.mixPlaying || state.mixPausedAt > 0) {
+    return currentMixTime();
+  }
+  return els.sourcePlayer.currentTime || 0;
 }
 
 function startChordTracking() {
@@ -884,6 +1133,9 @@ function startChordTracking() {
 }
 
 function trackChords() {
+  if (state.mixPlaying) {
+    syncActivePlayerTimes();
+  }
   updateCurrentChord();
   const sourcePlaying = !els.sourcePlayer.paused && !els.sourcePlayer.ended;
   if (sourcePlaying || state.mixPlaying) {
@@ -893,11 +1145,34 @@ function trackChords() {
   }
 }
 
+function activeMixPlayers() {
+  return state.players.filter(({ stem }) => stem.active);
+}
+
+function mixMasterPlayer() {
+  return activeMixPlayers().find(({ audio }) => Number.isFinite(audio.currentTime)) || null;
+}
+
+function syncActivePlayerTimes() {
+  const master = mixMasterPlayer();
+  if (!master) return;
+  const masterTime = master.audio.currentTime;
+  for (const { audio } of activeMixPlayers()) {
+    if (audio === master.audio || audio.paused || audio.ended) continue;
+    const drift = audio.currentTime - masterTime;
+    if (Math.abs(drift) > mixSyncToleranceSeconds) {
+      audio.currentTime = masterTime;
+    }
+  }
+}
+
 function syncPlayers() {
   const hasSelection = state.stems.some((stem) => stem.active);
+  updateSelectedSummary();
   els.exportBtn.disabled = !hasSelection;
   els.playMixBtn.disabled = !hasSelection;
   els.stopMixBtn.disabled = !state.players.length;
+  updatePauseButton();
   for (const { stem, audio } of state.players) {
     if (!stem.active && !audio.paused) {
       audio.pause();
@@ -911,11 +1186,13 @@ function syncPlayers() {
 }
 
 async function playMix() {
-  const activePlayers = state.players.filter(({ stem }) => stem.active);
+  const activePlayers = activeMixPlayers();
   if (!activePlayers.length) return;
+  els.sourcePlayer.pause();
   stopMix();
   state.mixPlaying = true;
   state.mixStartedAt = performance.now();
+  state.mixPausedAt = 0;
   for (const { audio } of activePlayers) {
     ensureAudioNode(audio);
     audio.currentTime = 0;
@@ -923,6 +1200,8 @@ async function playMix() {
   startSpectrum();
   startChordTracking();
   await Promise.all(activePlayers.map(({ audio }) => audio.play()));
+  syncActivePlayerTimes();
+  updatePauseButton();
 }
 
 function stopMix() {
@@ -932,10 +1211,74 @@ function stopMix() {
   }
   state.mixPlaying = false;
   state.mixStartedAt = 0;
+  state.mixPausedAt = 0;
   updateCurrentChord();
+  updatePauseButton();
+}
+
+function updatePauseButton() {
+  if (!els.pauseBtn) return;
+  const sourceActive = els.sourcePlayer.src && !els.sourcePlayer.ended && els.sourcePlayer.currentTime > 0;
+  const players = activeMixPlayers();
+  const mixActive = state.mixPlaying || state.mixPausedAt > 0 || players.some(({ audio }) => audio.currentTime > 0);
+  const canPause = Boolean(sourceActive || mixActive);
+  const paused = sourceActive
+    ? els.sourcePlayer.paused
+    : Boolean(state.mixPausedAt || players.every(({ audio }) => audio.paused));
+  els.pauseBtn.disabled = !canPause;
+  els.pauseBtn.textContent = paused && canPause ? t("resume") : t("pause");
+}
+
+async function togglePause() {
+  if (state.mixPlaying || state.mixPausedAt > 0) {
+    await toggleMixPause();
+    return;
+  }
+  if (!els.sourcePlayer.src) return;
+  if (els.sourcePlayer.paused) {
+    await els.sourcePlayer.play();
+    startChordTracking();
+  } else {
+    els.sourcePlayer.pause();
+  }
+  updatePauseButton();
+}
+
+async function toggleMixPause() {
+  const activePlayers = activeMixPlayers();
+  if (!activePlayers.length) return;
+
+  if (state.mixPlaying) {
+    state.mixPausedAt = currentMixTime();
+    for (const { audio } of activePlayers) {
+      audio.pause();
+    }
+    state.mixPlaying = false;
+    state.mixStartedAt = 0;
+    updateCurrentChord();
+    updatePauseButton();
+    return;
+  }
+
+  const resumeAt = state.mixPausedAt;
+  state.mixPlaying = true;
+  state.mixStartedAt = performance.now() - resumeAt * 1000;
+  state.mixPausedAt = 0;
+  for (const { audio } of activePlayers) {
+    ensureAudioNode(audio);
+    audio.currentTime = resumeAt;
+  }
+  startSpectrum();
+  startChordTracking();
+  await Promise.all(activePlayers.map(({ audio }) => audio.play()));
+  syncActivePlayerTimes();
+  updatePauseButton();
 }
 
 function currentMixTime() {
+  const master = mixMasterPlayer();
+  if (master && Number.isFinite(master.audio.currentTime)) return master.audio.currentTime;
+  if (state.mixPausedAt > 0) return state.mixPausedAt;
   if (!state.mixPlaying || !state.mixStartedAt) return 0;
   const elapsed = (performance.now() - state.mixStartedAt) / 1000;
   const durations = state.players
@@ -1119,19 +1462,32 @@ els.dropzone.addEventListener("drop", (evt) => {
 
 els.separateBtn.addEventListener("click", separate);
 els.exportBtn.addEventListener("click", exportMix);
+els.exitBtn.addEventListener("click", () => exitApplication());
 els.playMixBtn.addEventListener("click", playMix);
+els.pauseBtn.addEventListener("click", () => togglePause().catch((error) => log(error.message, "error")));
 els.stopMixBtn.addEventListener("click", stopMix);
 els.sourcePlayer.addEventListener("play", startChordTracking);
+els.sourcePlayer.addEventListener("play", updatePauseButton);
+els.sourcePlayer.addEventListener("playing", updatePauseButton);
 els.sourcePlayer.addEventListener("timeupdate", updateCurrentChord);
+els.sourcePlayer.addEventListener("timeupdate", updatePauseButton);
 els.sourcePlayer.addEventListener("seeked", updateCurrentChord);
-els.sourcePlayer.addEventListener("pause", updateCurrentChord);
-els.sourcePlayer.addEventListener("ended", updateCurrentChord);
+els.sourcePlayer.addEventListener("seeked", updatePauseButton);
+els.sourcePlayer.addEventListener("pause", () => {
+  updateCurrentChord();
+  updatePauseButton();
+});
+els.sourcePlayer.addEventListener("ended", () => {
+  updateCurrentChord();
+  updatePauseButton();
+});
 els.clearUploadsBtn.addEventListener("click", () => clearUploads().catch((error) => log(error.message, "error")));
 els.languageSelect.addEventListener("change", () => {
   currentLanguage = els.languageSelect.value;
   applyLanguage();
 });
 
+buildPianoKeyboard();
 applyLanguage();
 getStatus().catch(() => log(t("couldNotReadStatus"), "error"));
 loadJobs().catch((error) => log(error.message, "error"));

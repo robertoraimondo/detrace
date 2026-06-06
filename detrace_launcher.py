@@ -320,7 +320,6 @@ def main() -> None:
     setup = tk.Frame(root, bg="#eef3f2")
 
     splash_art = load_launcher_art()
-    root._detrace_images = (splash_art,)
 
     splash_image = tk.Label(splash, image=splash_art, bg="#10242a", borderwidth=0, cursor="hand2")
     splash_image.pack(fill="both", expand=True)

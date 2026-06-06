@@ -122,7 +122,7 @@ audio {
 
 .app {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   height: 100vh;
   min-height: 760px;
@@ -144,7 +144,8 @@ audio {
   padding: 16px;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .panel {
@@ -154,6 +155,26 @@ audio {
   top: 16px;
   max-height: calc(100vh - 32px);
   overflow: auto;
+}
+
+.inlinePanel {
+  position: static;
+  align-self: stretch;
+  max-height: 172px;
+  padding: 10px;
+  box-shadow: none;
+}
+
+.inlinePanelGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(180px, 0.85fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.uploadsColumn,
+.sessionColumn {
+  min-width: 0;
 }
 
 .topbar {
@@ -171,6 +192,23 @@ audio {
   display: grid;
   gap: 8px;
   justify-items: end;
+}
+
+.exitButton {
+  min-height: 34px;
+  padding: 0 10px;
+  background: var(--bad);
+  font-size: 13px;
+}
+
+.exitButton:hover {
+  background: #8f2d27;
+}
+
+.appClosed .workspace > *:not(.topbar),
+.appClosed .panel {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .languageControl {
@@ -213,6 +251,12 @@ h2 {
   gap: 12px;
 }
 
+.panelActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .status {
   display: flex;
   gap: 8px;
@@ -244,20 +288,18 @@ h2 {
 }
 
 .dropzone {
+  position: relative;
+  z-index: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
-  align-items: center;
-  min-height: 96px;
-  border: 2px dashed #8ca5ad;
-  border-radius: 8px;
-  padding: 16px;
-  background:
-    linear-gradient(135deg, rgba(11, 111, 124, 0.08), rgba(240, 163, 58, 0.08)),
-    #fbfcfc;
+  grid-template-columns: minmax(430px, 540px) minmax(360px, 520px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  flex: 0 0 auto;
+  min-height: 72px;
+  margin-bottom: 14px;
 }
 
-.dropzone.dragging {
+.dropzone.dragging .dropText {
   border-color: var(--accent);
   background: #eef8f9;
 }
@@ -268,14 +310,65 @@ h2 {
 
 .dropzone strong {
   display: block;
-  font-size: 20px;
-  margin-bottom: 6px;
+  font-size: 16px;
+  margin-bottom: 2px;
 }
 
-.dropzone span,
+.dropText span,
 .panel,
 label {
   color: var(--muted);
+}
+
+.dropGroup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.dropText {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  min-height: 54px;
+  padding: 9px 12px;
+  border: 2px dashed #8ca5ad;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(11, 111, 124, 0.08), rgba(240, 163, 58, 0.08)),
+    #fbfcfc;
+}
+
+.dropText span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dropControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  row-gap: 6px;
+}
+
+.dropControls > button {
+  flex: 0 0 auto;
+}
+
+.dropGroup > button {
+  flex: 0 0 auto;
+  min-height: 54px;
+  white-space: nowrap;
 }
 
 button,
@@ -363,17 +456,42 @@ button.working:hover {
 }
 
 .transport {
+  position: relative;
+  z-index: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 12px 0;
+  grid-template-columns: minmax(260px, 0.32fr) minmax(0, 1fr);
+  gap: 8px;
+  flex: 0 0 auto;
+  margin: 0 0 8px;
 }
 
 .transport > div {
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 12px;
+  padding: 8px;
   background: #fbfcfc;
+}
+
+.originalPreview {
+  display: grid;
+  align-content: start;
+}
+
+.selectedPreviewPanel {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.22fr) minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: start;
+}
+
+.selectedPreviewPanel > label,
+.selectedPreviewPanel > .selectedHint {
+  grid-column: 1;
+}
+
+.selectedPreviewPanel > .inlinePanel {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 label {
@@ -388,30 +506,39 @@ audio {
   width: 100%;
 }
 
-.mixPreview,
-.actions {
+.mixPreview {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.actions {
-  margin-bottom: 10px;
+.selectedHint {
+  display: block;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
-.modelBar {
+.inlineModel {
   display: grid;
-  grid-template-columns: auto minmax(260px, 420px);
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.modelBar label {
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  max-width: 520px;
   margin: 0;
 }
 
-.modelBar select,
+.inlineModel span {
+  font-size: 11px;
+}
+
+.inlineModel select,
 .languageControl select {
   width: 100%;
   min-height: 42px;
@@ -424,6 +551,11 @@ audio {
   font-weight: 700;
 }
 
+.inlineModel select {
+  min-height: 42px;
+  font-size: 12px;
+}
+
 .languageControl select {
   min-height: 34px;
   font-size: 13px;
@@ -433,15 +565,19 @@ audio {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
-  min-height: 0;
+  flex: 0 0 auto;
+  min-height: min-content;
 }
 
 .chordPanel {
+  container-type: inline-size;
+  flex: 0 0 auto;
   margin-top: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px;
   background: #fbfcfc;
+  overflow: hidden;
 }
 
 .chordHeader {
@@ -468,14 +604,90 @@ audio {
   font-weight: 900;
 }
 
+.pianoKeyboard {
+  --white-key-width: max(13px, calc((100cqw - 18px) / 52));
+  --black-key-width: calc(var(--white-key-width) * 0.64);
+  position: relative;
+  width: 100%;
+  height: 104px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid #d8e0e4;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #eef3f2, #dce7e6);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.pianoKeyboard::before {
+  content: "";
+  display: block;
+  width: calc(52 * var(--white-key-width));
+  height: 86px;
+}
+
+.pianoKey {
+  position: absolute;
+  bottom: 8px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 86px;
+  border: 1px solid #b5c0c6;
+  border-radius: 0 0 3px 3px;
+  background: #ffffff;
+  color: #6b767d;
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1;
+  padding-bottom: 4px;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.pianoKey.white {
+  left: calc(8px + var(--white-index) * var(--white-key-width));
+  width: var(--white-key-width);
+}
+
+.pianoKey.black {
+  z-index: 1;
+  left: calc(8px + var(--black-left) * var(--white-key-width) - var(--black-key-width) / 2);
+  width: var(--black-key-width);
+  height: 56px;
+  border-color: #172026;
+  border-radius: 0 0 3px 3px;
+  background: #172026;
+  color: transparent;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.18);
+}
+
+.pianoKey.active {
+  border-color: #b47516;
+  background: #f8ca70;
+  color: #10242a;
+  box-shadow: inset 0 -8px 0 rgba(180, 117, 22, 0.22);
+}
+
+.pianoKey.black.active {
+  border-color: #f8ca70;
+  background: #b47516;
+  box-shadow: 0 0 0 2px rgba(248, 202, 112, 0.42), 0 2px 0 rgba(0, 0, 0, 0.18);
+}
+
 .chordTimeline {
   display: flex;
+  flex-wrap: nowrap;
   gap: 4px;
   min-height: 46px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
 }
 
 .chordItem {
+  flex: 0 0 auto;
   display: grid;
   gap: 1px;
   min-width: 54px;
@@ -608,7 +820,7 @@ audio {
 .uploadList {
   display: grid;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 8px;
 }
 
 .uploadItem {
@@ -616,8 +828,8 @@ audio {
   gap: 4px;
   justify-content: stretch;
   width: 100%;
-  min-height: 56px;
-  padding: 10px 12px;
+  min-height: 46px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   background: #fbfcfc;
   color: var(--ink);
@@ -651,16 +863,16 @@ audio {
 }
 
 .sessionTitle {
-  margin-top: 24px;
+  margin-top: 0;
 }
 
 .panel ol {
-  margin: 18px 0 0;
+  margin: 8px 0 0;
   padding-left: 20px;
 }
 
 .panel li {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .panel .error {
@@ -686,7 +898,22 @@ audio {
 
   .app,
   .transport,
-  .modelBar {
+  .dropzone {
+    grid-template-columns: 1fr;
+  }
+
+  .selectedPreviewPanel {
+    grid-template-columns: 1fr;
+  }
+
+  .selectedPreviewPanel > label,
+  .selectedPreviewPanel > .selectedHint,
+  .selectedPreviewPanel > .inlinePanel {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .inlinePanelGrid {
     grid-template-columns: 1fr;
   }
 
@@ -701,10 +928,21 @@ audio {
     position: static;
   }
 
-  .topbar,
-  .dropzone {
+  .topbar {
     grid-template-columns: 1fr;
     flex-direction: column;
+  }
+
+  .dropControls {
+    justify-content: flex-start;
+  }
+
+  .dropGroup {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .inlineModel {
+    max-width: 100%;
   }
 
   .status {

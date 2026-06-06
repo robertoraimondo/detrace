@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import uuid
 from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,6 +25,12 @@ HOST = "127.0.0.1"
 PORT = int(os.environ.get("PORT", "5180"))
 MAX_UPLOAD = 250 * 1024 * 1024
 ALLOWED_MODELS = {"htdemucs", "htdemucs_6s"}
+PASSING_CHORD_MAX_SECONDS = 1.6
+CHORD_HOP_LENGTH = 2048
+MIN_CHORD_SECONDS = 0.18
+ACTIVE_SERVER: ThreadingHTTPServer | None = None
+ACTIVE_PROCESSES: set[subprocess.Popen[str]] = set()
+ACTIVE_PROCESSES_LOCK = threading.Lock()
 
 
 def ensure_dirs() -> None:
@@ -83,14 +90,58 @@ def tool_status() -> dict:
     }
 
 
+def terminate_process(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=4)
+    except subprocess.TimeoutExpired:
+        process.kill()
+
+
+def terminate_active_processes() -> None:
+    with ACTIVE_PROCESSES_LOCK:
+        processes = list(ACTIVE_PROCESSES)
+    for process in processes:
+        terminate_process(process)
+
+
 def run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    process = subprocess.Popen(
         args,
         cwd=str(ROOT),
         text=True,
-        capture_output=True,
-        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
+    with ACTIVE_PROCESSES_LOCK:
+        ACTIVE_PROCESSES.add(process)
+    try:
+        stdout, stderr = process.communicate()
+        return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
+    finally:
+        with ACTIVE_PROCESSES_LOCK:
+            ACTIVE_PROCESSES.discard(process)
+
+
+def stop_server() -> None:
+    terminate_active_processes()
+    if ACTIVE_SERVER is not None:
+        ACTIVE_SERVER.shutdown()
+
+
+def shutdown(handler: BaseHTTPRequestHandler) -> None:
+    json_response(handler, 200, {"ok": True})
+    threading.Thread(target=stop_server, daemon=True).start()
 
 
 def install_tools(handler: BaseHTTPRequestHandler) -> None:
@@ -147,6 +198,78 @@ def job_dir(job_id: str) -> Path:
     return STEMS / job_id
 
 
+def chord_cache_path(job_id: str) -> Path:
+    return job_dir(job_id) / "chords-v3.json"
+
+
+def load_cached_chords(job_id: str) -> list[dict]:
+    path = chord_cache_path(job_id)
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return simplify_chords([item for item in data if isinstance(item, dict)])
+
+
+def save_cached_chords(job_id: str, chords: list[dict]) -> None:
+    path = chord_cache_path(job_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(simplify_chords(chords)), encoding="utf-8")
+
+
+def collapse_repeated_chords(chords: list[dict]) -> list[dict]:
+    merged = []
+    for chord in chords:
+        current = {
+            **chord,
+            "start": round(float(chord.get("start", 0)), 2),
+            "end": round(float(chord.get("end", 0)), 2),
+        }
+        previous = merged[-1] if merged else None
+        if previous and previous.get("chord") == current.get("chord"):
+            previous["end"] = max(previous["end"], current["end"])
+            continue
+        merged.append(current)
+    return merged
+
+
+def simplify_chords(chords: list[dict]) -> list[dict]:
+    merged = collapse_repeated_chords(chords)
+    if len(merged) <= 2:
+        return merged
+
+    simplified = []
+    index = 0
+    while index < len(merged):
+        chord = merged[index]
+        duration = max(0.0, float(chord["end"]) - float(chord["start"]))
+        previous = simplified[-1] if simplified else None
+        next_chord = merged[index + 1] if index + 1 < len(merged) else None
+
+        if duration < PASSING_CHORD_MAX_SECONDS:
+            if previous and next_chord and previous.get("chord") == next_chord.get("chord"):
+                previous["end"] = next_chord["end"]
+                index += 2
+                continue
+            if next_chord:
+                next_chord["start"] = chord["start"]
+                index += 1
+                continue
+            if previous:
+                previous["end"] = chord["end"]
+                index += 1
+                continue
+
+        simplified.append(dict(chord))
+        index += 1
+
+    return collapse_repeated_chords(simplified)
+
+
 def find_stems(job_id: str) -> list[dict]:
     base = job_dir(job_id)
     files = sorted([*base.rglob("*.mp3"), *base.rglob("*.wav")])
@@ -192,6 +315,7 @@ def job_payload(upload_path: Path) -> dict:
         "filename": display_name(upload_path, job_id),
         "sourceUrl": media_url(upload_path.relative_to(WORKSPACE).as_posix()),
         "stems": stems,
+        "chords": load_cached_chords(job_id),
         "analyzed": bool(stems),
         "uploadedAt": upload_path.stat().st_mtime,
     }
@@ -359,18 +483,18 @@ def merge_chords(frame_chords: list[str], times: list[float], duration: float) -
         if chord == current:
             continue
         end = float(times[index])
-        if current != "N" and end - start >= 0.35:
+        if current != "N" and end - start >= MIN_CHORD_SECONDS:
             segments.append({"start": round(start, 2), "end": round(end, 2), "chord": current})
         start = end
         current = chord
 
     end = float(duration)
-    if current != "N" and end - start >= 0.35:
+    if current != "N" and end - start >= MIN_CHORD_SECONDS:
         segments.append({"start": round(start, 2), "end": round(end, 2), "chord": current})
 
     smoothed = []
     for segment in segments:
-        if smoothed and smoothed[-1]["chord"] == segment["chord"] and segment["start"] - smoothed[-1]["end"] <= 0.25:
+        if smoothed and smoothed[-1]["chord"] == segment["chord"]:
             smoothed[-1]["end"] = segment["end"]
         else:
             smoothed.append(segment)
@@ -385,8 +509,8 @@ def detect_chords(audio_path: Path) -> list[dict]:
     if y.size == 0:
         return []
 
-    chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=4096)
-    times = librosa.frames_to_time(np.arange(chroma.shape[1]), sr=sr, hop_length=4096)
+    chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=CHORD_HOP_LENGTH)
+    times = librosa.frames_to_time(np.arange(chroma.shape[1]), sr=sr, hop_length=CHORD_HOP_LENGTH)
     templates = chord_templates()
     raw_chords = [best_chord(chroma[:, index], templates) for index in range(chroma.shape[1])]
 
@@ -407,6 +531,11 @@ def chords(handler: BaseHTTPRequestHandler) -> None:
         return
 
     tools = tool_status()
+    cached = load_cached_chords(job_id)
+    if cached:
+        json_response(handler, 200, {"jobId": job_id, "chords": cached, "cached": True, "tools": tools})
+        return
+
     if not tools["chords"]:
         json_response(
             handler,
@@ -424,7 +553,9 @@ def chords(handler: BaseHTTPRequestHandler) -> None:
         json_response(handler, 500, {"error": "Chord detection failed.", "details": str(exc), "tools": tools})
         return
 
-    json_response(handler, 200, {"jobId": job_id, "chords": segments, "tools": tools})
+    segments = simplify_chords(segments)
+    save_cached_chords(job_id, segments)
+    json_response(handler, 200, {"jobId": job_id, "chords": segments, "cached": False, "tools": tools})
 
 
 def export_mix(handler: BaseHTTPRequestHandler) -> None:
@@ -530,6 +661,9 @@ class AppHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/install-tools":
             install_tools(self)
             return
+        if parsed.path == "/api/shutdown":
+            shutdown(self)
+            return
         json_response(self, 404, {"error": "Unknown endpoint."})
 
     def do_DELETE(self) -> None:
@@ -603,6 +737,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
 
 def start_server() -> None:
+    global ACTIVE_SERVER
     ensure_dirs()
     port = PORT
     while True:
@@ -616,7 +751,13 @@ def start_server() -> None:
 
     print(f"DeTrace is running at http://{HOST}:{port}")
     print(f"Tool status: {tool_status()}")
-    server.serve_forever()
+    ACTIVE_SERVER = server
+    try:
+        server.serve_forever()
+    finally:
+        terminate_active_processes()
+        server.server_close()
+        ACTIVE_SERVER = None
 
 
 if __name__ == "__main__":
