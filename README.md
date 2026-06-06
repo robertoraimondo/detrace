@@ -8,7 +8,9 @@ DeTrace is a local desktop app for separating an MP3 into vocal and instrument s
 <img width="631" height="692" alt="image" src="https://github.com/user-attachments/assets/291986dc-9a14-404a-af31-e86feed1d7bf" />
 
 
-<img width="1916" height="1026" alt="image" src="https://github.com/user-attachments/assets/99f0838c-6fe6-44c7-bb10-bbcbb7c2a50c" />
+<img width="1902" height="1012" alt="image" src="https://github.com/user-attachments/assets/35cdb57d-b79f-407b-8550-6c1990a7852c" />
+
+
 
 The app uses:
 
