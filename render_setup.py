@@ -80,6 +80,10 @@ def install_mvsep_repo() -> None:
         print(f"MVSep source already exists at {MVSEP_REPO_DIR}", flush=True)
         return
 
+    if MVSEP_REPO_DIR.exists():
+        print(f"Removing incomplete MVSep source at {MVSEP_REPO_DIR}", flush=True)
+        shutil.rmtree(MVSEP_REPO_DIR)
+
     archive = TOOLS_DIR / "mvsep-source.zip"
     extract_root = TOOLS_DIR / "mvsep-extract"
     download_file(MVSEP_REPO_ZIP_URL, archive)

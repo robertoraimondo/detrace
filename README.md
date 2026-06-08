@@ -105,7 +105,7 @@ pip install -r requirements.txt && python render_setup.py
 Start command:
 
 ```bash
-gunicorn detrace.wsgi
+python render_setup.py && gunicorn detrace.wsgi
 ```
 
 The included `render.yaml` uses those commands. `render_setup.py` downloads the MVSep source, accordion config, and accordion checkpoint during the Render build so the `MVSep Accordion` readiness badge can pass in the deployed app.

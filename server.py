@@ -187,6 +187,21 @@ def mvsep_accordion_status() -> bool:
     )
 
 
+def mvsep_accordion_diagnostics() -> dict:
+    settings = mvsep_settings()
+    inference = settings["repo"] / "inference.py"
+    return {
+        "repo": str(settings["repo"]),
+        "repoExists": settings["repo"].is_dir(),
+        "inference": str(inference),
+        "inferenceExists": inference.is_file(),
+        "config": str(settings["config"]),
+        "configExists": settings["config"].is_file(),
+        "checkpoint": str(settings["checkpoint"]),
+        "checkpointExists": settings["checkpoint"].is_file(),
+    }
+
+
 def mvsep_true_status() -> bool:
     settings = mvsep_true_settings()
     return (
@@ -382,6 +397,7 @@ def tool_status() -> dict:
         "cuda": torch_cuda_available(),
         "device": processing_device(),
         "cpuThreads": cpu_worker_count(),
+        "mvsepAccordionDiagnostics": mvsep_accordion_diagnostics(),
         "performance": performance_status(),
     }
 
