@@ -92,23 +92,6 @@ Open [http://localhost:5180](http://localhost:5180) in your browser.
 
 If that port is busy, DeTrace automatically uses the next available port.
 
-## Fly.io Deployment
-
-The repo includes a `Dockerfile` and `fly.toml` for Fly.io. The container listens on `0.0.0.0:8080`, installs dependencies, and runs `deploy_setup.py` to download the MVSep source, accordion config/checkpoint, and true multi-stem accordion config/checkpoint.
-
-Deploy:
-
-```bash
-flyctl deploy -a detrace
-```
-
-If Fly reports `unauthorized` while building or pushing the image, refresh the Fly login and retry:
-
-```bash
-flyctl auth logout
-flyctl auth login
-```
-
 ## Separation Models
 
 The app uses **Full instrument stems: MVSep Mega 53 local model** as its separation workflow. It runs the local MVSep model, keeps audible instrument outputs, and lets you preview, mute, remove, and export the selected stems from that full model result.
