@@ -212,6 +212,22 @@ def mvsep_true_status() -> bool:
     )
 
 
+def mvsep_true_diagnostics() -> dict:
+    settings = mvsep_true_settings()
+    inference = settings["repo"] / "inference.py"
+    return {
+        "repo": str(settings["repo"]),
+        "repoExists": settings["repo"].is_dir(),
+        "inference": str(inference),
+        "inferenceExists": inference.is_file(),
+        "config": str(settings["config"]),
+        "configExists": settings["config"].is_file(),
+        "configDeclaresTrueAccordion": config_declares_true_accordion(settings["config"]),
+        "checkpoint": str(settings["checkpoint"]),
+        "checkpointExists": settings["checkpoint"].is_file(),
+    }
+
+
 def cpu_worker_count() -> int:
     detected = os.cpu_count() or 1
     configured = os.environ.get("DETRACE_CPU_THREADS", "").strip()
@@ -398,6 +414,7 @@ def tool_status() -> dict:
         "device": processing_device(),
         "cpuThreads": cpu_worker_count(),
         "mvsepAccordionDiagnostics": mvsep_accordion_diagnostics(),
+        "mvsepTrueAccordionDiagnostics": mvsep_true_diagnostics(),
         "performance": performance_status(),
     }
 

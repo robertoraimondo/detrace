@@ -15,6 +15,10 @@ MVSEP_REPO_DIR = TOOLS_DIR / "Music-Source-Separation-Training"
 MVSEP_MODEL_DIR = ROOT / "models" / "mvsep_accordion"
 MVSEP_CONFIG_FILE = MVSEP_MODEL_DIR / "config.yaml"
 MVSEP_CHECKPOINT_FILE = MVSEP_MODEL_DIR / "bs_mega_53stem_accordion_mvsep.ckpt"
+TRUE_MVSEP_MODEL_DIR = ROOT / "models" / "mvsep_true_accordion"
+TRUE_MVSEP_URLS_FILE = TRUE_MVSEP_MODEL_DIR / "download-urls.txt"
+TRUE_MVSEP_CONFIG_FILE = TRUE_MVSEP_MODEL_DIR / "config.yaml"
+TRUE_MVSEP_CHECKPOINT_FILE = TRUE_MVSEP_MODEL_DIR / "checkpoint.ckpt"
 
 MIN_MVSEP_CONFIG_BYTES = 512
 MIN_MVSEP_CHECKPOINT_BYTES = 50 * 1024 * 1024
@@ -119,6 +123,47 @@ def install_mvsep_model() -> None:
         print(f"MVSep checkpoint already exists at {MVSEP_CHECKPOINT_FILE}", flush=True)
 
 
+def true_mvsep_download_urls() -> tuple[str, str]:
+    config_url = os.environ.get("DETRACE_MVSEP_TRUE_CONFIG_URL", "").strip()
+    checkpoint_url = os.environ.get("DETRACE_MVSEP_TRUE_CKPT_URL", "").strip()
+    if config_url and checkpoint_url:
+        return config_url, checkpoint_url
+
+    if TRUE_MVSEP_URLS_FILE.is_file():
+        for line in TRUE_MVSEP_URLS_FILE.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.partition("=")
+            if not separator:
+                continue
+            normalized = key.strip().lower()
+            url = value.strip()
+            if normalized in {"config", "config_url", "detrace_mvsep_true_config_url"}:
+                config_url = url
+            elif normalized in {"checkpoint", "checkpoint_url", "ckpt", "ckpt_url", "detrace_mvsep_true_ckpt_url"}:
+                checkpoint_url = url
+    return config_url, checkpoint_url
+
+
+def install_true_mvsep_model() -> None:
+    config_url, checkpoint_url = true_mvsep_download_urls()
+    if not config_url or not checkpoint_url:
+        raise RuntimeError(
+            "Missing true MVSep download URLs. Set DETRACE_MVSEP_TRUE_CONFIG_URL and "
+            "DETRACE_MVSEP_TRUE_CKPT_URL, or add models/mvsep_true_accordion/download-urls.txt."
+        )
+
+    if not valid_file(TRUE_MVSEP_CONFIG_FILE, MIN_MVSEP_CONFIG_BYTES):
+        TRUE_MVSEP_CONFIG_FILE.unlink(missing_ok=True)
+        download_file(config_url, TRUE_MVSEP_CONFIG_FILE)
+    else:
+        print(f"True MVSep config already exists at {TRUE_MVSEP_CONFIG_FILE}", flush=True)
+
+    if not valid_file(TRUE_MVSEP_CHECKPOINT_FILE, MIN_MVSEP_CHECKPOINT_BYTES):
+        TRUE_MVSEP_CHECKPOINT_FILE.unlink(missing_ok=True)
+        download_file(checkpoint_url, TRUE_MVSEP_CHECKPOINT_FILE)
+    else:
+        print(f"True MVSep checkpoint already exists at {TRUE_MVSEP_CHECKPOINT_FILE}", flush=True)
+
+
 def install_cuda_torch() -> None:
     if os.environ.get("DETRACE_ENABLE_CUDA", "").strip().lower() not in {"1", "true", "yes"}:
         print("Skipping CUDA PyTorch install because DETRACE_ENABLE_CUDA is not enabled.", flush=True)
@@ -149,6 +194,7 @@ def main() -> int:
     install_cuda_torch()
     install_mvsep_repo()
     install_mvsep_model()
+    install_true_mvsep_model()
 
     if not (MVSEP_REPO_DIR / "inference.py").is_file():
         raise RuntimeError(f"Missing MVSep inference.py at {MVSEP_REPO_DIR}")
@@ -156,8 +202,12 @@ def main() -> int:
         raise RuntimeError(f"Missing MVSep config at {MVSEP_CONFIG_FILE}")
     if not valid_file(MVSEP_CHECKPOINT_FILE, MIN_MVSEP_CHECKPOINT_BYTES):
         raise RuntimeError(f"Missing MVSep checkpoint at {MVSEP_CHECKPOINT_FILE}")
+    if not valid_file(TRUE_MVSEP_CONFIG_FILE, MIN_MVSEP_CONFIG_BYTES):
+        raise RuntimeError(f"Missing true MVSep config at {TRUE_MVSEP_CONFIG_FILE}")
+    if not valid_file(TRUE_MVSEP_CHECKPOINT_FILE, MIN_MVSEP_CHECKPOINT_BYTES):
+        raise RuntimeError(f"Missing true MVSep checkpoint at {TRUE_MVSEP_CHECKPOINT_FILE}")
 
-    print("MVSep Accordion is ready for Render.", flush=True)
+    print("MVSep Accordion and True Accordion are ready for Render.", flush=True)
     return 0
 
 
