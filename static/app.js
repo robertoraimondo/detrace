@@ -852,9 +852,22 @@ function updatePerformanceBadges(performance = {}) {
   }
 }
 
+async function readJsonResponse(response, fallbackMessage = "Request failed") {
+  const contentType = response.headers.get("Content-Type") || "";
+  if (contentType.toLowerCase().includes("application/json")) {
+    return response.json();
+  }
+
+  const text = await response.text();
+  const snippet = text.replace(/\s+/g, " ").trim().slice(0, 300);
+  const error = `${fallbackMessage} (${response.status} ${response.statusText || "HTTP error"}).${snippet ? ` Server returned: ${snippet}` : ""}`;
+  return { error };
+}
+
 async function getStatus() {
   const response = await fetch("/api/status");
-  const data = await response.json();
+  const data = await readJsonResponse(response, "Could not load tool status");
+  if (!response.ok) throw new Error(data.error || "Could not load tool status");
   updateTools(data.tools);
   return data.tools;
 }
@@ -903,7 +916,7 @@ async function ensureToolsReady() {
 
 async function loadJobs() {
   const response = await fetch("/api/jobs");
-  const data = await response.json();
+  const data = await readJsonResponse(response, t("couldNotLoadUploads"));
   if (!response.ok) throw new Error(data.error || t("couldNotLoadUploads"));
   state.jobs = data.jobs;
   updateTools(data.tools);
@@ -917,7 +930,7 @@ async function clearUploads() {
 
   releaseLoadedAudio();
   const response = await fetch("/api/jobs", { method: "DELETE" });
-  const data = await response.json();
+  const data = await readJsonResponse(response, t("couldNotClearUploads"));
   if (!response.ok) throw new Error(data.error || t("couldNotClearUploads"));
 
   state.jobId = "";
@@ -1005,7 +1018,7 @@ function loadJobIntoView(job) {
 async function selectJob(job) {
   try {
     const response = await fetch(`/api/jobs/${job.jobId}`);
-    const data = await response.json();
+    const data = await readJsonResponse(response, t("couldNotLoadUploaded"));
     if (!response.ok) throw new Error(data.error || t("couldNotLoadUploaded"));
     updateTools(data.tools);
     loadJobIntoView(data.job);
@@ -1064,7 +1077,7 @@ async function uploadFile(file) {
     headers: { "X-Filename": encodeURIComponent(file.name || "audio.mp3") },
     body: file,
   });
-  const data = await response.json();
+  const data = await readJsonResponse(response, t("uploadFailed"));
   if (!response.ok) throw new Error(data.error || t("uploadFailed"));
 
   state.jobId = data.jobId;
@@ -1086,7 +1099,7 @@ async function postJson(url, payload) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const data = await response.json();
+  const data = await readJsonResponse(response, `Request failed: ${url}`);
   return { response, data };
 }
 
@@ -2061,7 +2074,7 @@ async function exportMix() {
         treble: state.trebleLevel,
       }),
     });
-    const data = await response.json();
+    const data = await readJsonResponse(response, t("exportFailed"));
     updateTools(data.tools);
     if (response.status === 424 && await ensureToolsReady()) {
       return exportMix();

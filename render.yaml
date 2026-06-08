@@ -3,7 +3,7 @@ services:
     name: detrace
     runtime: python
     buildCommand: pip install -r requirements.txt && python render_setup.py
-    startCommand: python render_setup.py && gunicorn detrace.wsgi
+    startCommand: python render_setup.py && gunicorn detrace.wsgi --workers 1 --threads 4 --timeout 1800
     envVars:
       - key: DETRACE_MVSEP_FORCE_CPU
         value: "0"
