@@ -1,1 +1,1 @@
-web: python deploy_setup.py && gunicorn detrace.wsgi --workers 1 --threads 4 --timeout 1800
+web: python deploy_setup.py && python server.py

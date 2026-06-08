@@ -28,7 +28,7 @@ STEMS = WORKSPACE / "stems"
 EXPORTS = WORKSPACE / "exports"
 LOCAL_MODELS = ROOT / "models"
 
-HOST = "127.0.0.1"
+HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "5180"))
 MAX_UPLOAD = 250 * 1024 * 1024
 COMBINED_ACCORDION_MODEL = "htdemucs_6s_accordion"

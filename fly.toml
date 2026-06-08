@@ -5,6 +5,7 @@ primary_region = "iad"
   dockerfile = "Dockerfile"
 
 [env]
+  HOST = "0.0.0.0"
   PORT = "8080"
   DETRACE_MVSEP_FORCE_CPU = "0"
   DETRACE_ENABLE_CUDA = "0"
