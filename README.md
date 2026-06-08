@@ -96,13 +96,19 @@ If that port is busy, DeTrace automatically uses the next available port.
 
 Use the Python environment on Render and install dependencies from `requirements.txt`.
 
+Build command:
+
+```bash
+pip install -r requirements.txt && python render_setup.py
+```
+
 Start command:
 
 ```bash
 gunicorn detrace.wsgi
 ```
 
-The `detrace.wsgi` module adapts the existing DeTrace HTTP handler for Gunicorn.
+The included `render.yaml` uses those commands and forces CPU inference by default. `render_setup.py` downloads the MVSep source, accordion config, and accordion checkpoint during the Render build so the `MVSep Accordion` readiness badge can pass in the deployed app.
 
 ## Separation Models
 

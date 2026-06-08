@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: detrace
+    runtime: python
+    buildCommand: pip install -r requirements.txt && python render_setup.py
+    startCommand: gunicorn detrace.wsgi
+    envVars:
+      - key: DETRACE_MVSEP_FORCE_CPU
+        value: "1"
