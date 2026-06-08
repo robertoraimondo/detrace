@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="DeTrace app icon">
+  <defs>
+    <linearGradient id="bg" x1="38" y1="25" x2="218" y2="231" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#15232a"/>
+      <stop offset="0.55" stop-color="#0e151a"/>
+      <stop offset="1" stop-color="#203233"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="34" y1="126" x2="222" y2="126" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#47e4d2"/>
+      <stop offset="0.5" stop-color="#f5cf66"/>
+      <stop offset="1" stop-color="#8cf27a"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="54" fill="url(#bg)"/>
+  <path d="M54 78c0-13.3 10.7-24 24-24h100c13.3 0 24 10.7 24 24v100c0 13.3-10.7 24-24 24H78c-13.3 0-24-10.7-24-24V78z" fill="#f7fbf8" opacity="0.08"/>
+  <path d="M72 70h112c8.8 0 16 7.2 16 16v84c0 8.8-7.2 16-16 16H72c-8.8 0-16-7.2-16-16V86c0-8.8 7.2-16 16-16z" fill="#0c1216" stroke="#31515a" stroke-width="5"/>
+  <path d="M86 88v80M104 88v80M122 88v80" stroke="#edf7f1" stroke-opacity="0.9" stroke-width="8" stroke-linecap="round"/>
+  <path d="M146 95c17 13 16 53 0 66M166 95c17 13 16 53 0 66" stroke="#edf7f1" stroke-opacity="0.9" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="147" cy="112" r="5" fill="#47e4d2"/>
+  <circle cx="166" cy="112" r="5" fill="#f5cf66"/>
+  <circle cx="147" cy="145" r="5" fill="#8cf27a"/>
+  <circle cx="166" cy="145" r="5" fill="#47e4d2"/>
+  <path d="M33 132h19l8-28 13 58 13-82 15 102 13-75 11 25h20l9-25 12 54 12-29h45" fill="none" stroke="url(#wave)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M33 132h19l8-28 13 58 13-82 15 102 13-75 11 25h20l9-25 12 54 12-29h45" fill="none" stroke="#ffffff" stroke-opacity="0.24" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

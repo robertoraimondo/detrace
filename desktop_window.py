@@ -50,13 +50,13 @@ def main() -> None:
         "DeTrace",
         url,
         js_api=AppApi(),
-        width=1280,
-        height=860,
-        min_size=(1280, 760),
+        width=1180,
+        height=820,
+        min_size=(720, 560),
         maximized=True,
     )
     try:
-        webview.start()
+        webview.start(gui="edgechromium")
     finally:
         server.stop_server()
 

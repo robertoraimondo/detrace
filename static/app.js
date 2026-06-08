@@ -12,6 +12,15 @@ const state = {
   mixPausedAt: 0,
   jobs: [],
   tools: {},
+  playToken: 0,
+  analysisRunning: false,
+  sessionStep: 0,
+  sessionProcesses: [],
+  masterVolume: Number(localStorage.getItem("detrace-master-volume") || 1),
+  bassLevel: Number(localStorage.getItem("detrace-bass-level") || 0),
+  trebleLevel: Number(localStorage.getItem("detrace-treble-level") || 0),
+  seeking: false,
+  loopEnabled: localStorage.getItem("detrace-loop-enabled") === "1",
 };
 
 const els = {
@@ -27,6 +36,8 @@ const els = {
   playMixBtn: document.querySelector("#playMixBtn"),
   pauseBtn: document.querySelector("#pauseBtn"),
   stopMixBtn: document.querySelector("#stopMixBtn"),
+  rewindBtn: document.querySelector("#rewindBtn"),
+  loopBtn: document.querySelector("#loopBtn"),
   stems: document.querySelector("#stems"),
   uploadList: document.querySelector("#uploadList"),
   spectrumCanvas: document.querySelector("#spectrumCanvas"),
@@ -34,6 +45,17 @@ const els = {
   currentChord: document.querySelector("#currentChord"),
   pianoKeyboard: document.querySelector("#pianoKeyboard"),
   selectedSummary: document.querySelector("#selectedSummary"),
+  volumeControl: document.querySelector("#volumeControl"),
+  volumeValue: document.querySelector("#volumeValue"),
+  seekControl: document.querySelector("#seekControl"),
+  seekCurrent: document.querySelector("#seekCurrent"),
+  seekDuration: document.querySelector("#seekDuration"),
+  bassControl: document.querySelector("#bassControl"),
+  bassValue: document.querySelector("#bassValue"),
+  bassLed: document.querySelector("#bassLed"),
+  trebleControl: document.querySelector("#trebleControl"),
+  trebleValue: document.querySelector("#trebleValue"),
+  trebleLed: document.querySelector("#trebleLed"),
   clearUploadsBtn: document.querySelector("#clearUploadsBtn"),
   modelSelect: document.querySelector("#modelSelect"),
   languageSelect: document.querySelector("#languageSelect"),
@@ -57,13 +79,23 @@ const translations = {
     chooseMp3: "Choose MP3",
     original: "Original",
     selectedPreview: "Selected instrument preview",
+    volume: "Volume",
+    position: "Position",
+    bass: "Bass",
+    treble: "Treble",
     playSelected: "Play Selected",
+    rewind: "Rewind",
+    loop: "Loop",
     pause: "Pause",
     resume: "Resume",
     stop: "Stop",
     stemModel: "Stem model",
+    modelCombined: "6 stems + Accordion",
+    modelTrueAccordion: "Full instrument stems: MVSep Mega 53 local model",
     model6: "6 stems: vocals, drums, bass, guitar, piano, other",
     model4: "4 stems: vocals, drums, bass, other",
+    modelAccordion: "Accordion only: MVSep local model",
+    analyze: "Analyze",
     analyzeAgain: "Analyze Again",
     exportMp3: "Export MP3",
     extractChords: "Extract Chords",
@@ -98,6 +130,19 @@ const translations = {
     uploadComplete: "Upload complete. Analyzing instruments now...",
     analyzing: "Analyzing...",
     analyzingWithModel: "Analyzing the MP3 with {model}. This can take a few minutes.",
+    checkingRequirements: "Checking analysis requirements...",
+    requirementsReady: "Requirements are ready.",
+    separationStarted: "Starting stem separation with {model}...",
+    separationCached: "Using already analyzed stems for {model}.",
+    separationStillRunning: "Stem separation is still running. Large songs and first runs can take several minutes.",
+    separationReady: "Stem separation finished in {seconds}s.",
+    renderingTracks: "Preparing {count} playable tracks: {tracks}.",
+    chordsStarted: "Starting chord detection...",
+    chordsFinished: "Chord detection finished in {seconds}s.",
+    sessionReadyToPlay: "All sessions are completed. Now you can play your song.",
+    accordionStarted: "Starting Accordion extraction...",
+    accordionStillRunning: "Accordion extraction is still running. This model is slower than the 6-stem pass.",
+    accordionFinished: "Accordion extraction finished in {seconds}s.",
     separationFailed: "Separation failed.",
     foundTracks: "Found {count} tracks: {tracks}.",
     select: "Select",
@@ -107,6 +152,12 @@ const translations = {
     exportFailed: "Export failed.",
     exportDownloaded: "MP3 export downloaded.",
     couldNotDownload: "Could not download exported MP3.",
+    audioLoadFailed: "Could not load audio: {track}.",
+    audioPlayFailed: "Could not play audio: {track}.",
+    audioPlaySkipped: "Audio was skipped after a playback interruption: {track}.",
+    accordionPending: "6 stems are ready. Accordion is still processing...",
+    accordionReady: "Accordion stem is ready.",
+    accordionFailed: "Accordion stem failed.",
     couldNotReadStatus: "Could not read tool status.",
     exitApp: "Exit",
     exiting: "Closing DeTrace...",
@@ -502,6 +553,7 @@ const translations = {
 
 const toolLabels = {
   demucs: "Demucs",
+  mvsepAccordion: "MVSep Accordion",
   ffmpeg: "FFmpeg",
   codecs: "Codecs",
   chords: "Chords",
@@ -510,10 +562,11 @@ const toolLabels = {
 let currentLanguage = localStorage.getItem("detrace-language") || "en";
 
 const visualizer = {
-  context: null,
-  nodes: new WeakMap(),
   frame: 0,
   chordFrame: 0,
+  context: null,
+  nodes: new Map(),
+  mixData: null,
 };
 
 const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -529,6 +582,7 @@ const chordIntervals = {
   minor: [0, 3, 7],
 };
 const mixSyncToleranceSeconds = 0.045;
+const playedStemPeakThreshold = 10;
 
 function t(key, values = {}) {
   const text = translations[currentLanguage]?.[key] || translations.en[key] || key;
@@ -605,31 +659,98 @@ function updatePianoKeyboard(chordName) {
   }
 }
 
-function setAudioSource(audio, src) {
+function audioLabel(audio) {
+  return audio.dataset.track || audio.currentSrc || audio.src || "track";
+}
+
+function mediaSource(src) {
+  if (!src || src.startsWith("blob:") || src.startsWith("http://") || src.startsWith("https://")) {
+    return src || "";
+  }
+  return new URL(src, window.location.origin).href;
+}
+
+function prepareAudioOutput(audio) {
+  audio.muted = false;
+  audio.defaultMuted = false;
+  if (!playerForAudio(audio)) {
+    audio.volume = 1;
+  }
+  ensureAudioNode(audio);
+  applyPreviewGain();
+}
+
+function setAudioSource(audio, src, label = "") {
+  const source = mediaSource(src);
+  const version = String((Number(audio.dataset.sourceVersion) || 0) + 1);
   audio.pause();
-  audio.src = src;
+  prepareAudioOutput(audio);
+  audio.dataset.sourceVersion = version;
+  audio.dataset.track = label;
+  audio.loop = false;
+  audio.src = source;
   audio.load();
   updatePauseButton();
   audio.addEventListener("play", () => {
-    ensureAudioNode(audio);
+    if (audio.dataset.sourceVersion !== version || !audio.currentSrc) return;
     startSpectrum();
     startChordTracking();
   }, { once: true });
+  audio.addEventListener("error", () => {
+    if (audio.dataset.sourceVersion !== version || !source) return;
+    log(t("audioLoadFailed", { track: audioLabel(audio) }), "error");
+  }, { once: true });
+  audio.addEventListener("loadedmetadata", updateSeekControl, { once: true });
+  updateSeekControl();
 }
 
-function log(message, type = "") {
-  const item = document.createElement("li");
-  item.textContent = message;
-  if (type) item.className = type;
-  els.log.prepend(item);
+function nextSessionStep() {
+  state.sessionStep += 1;
+  return state.sessionStep;
+}
+
+function renderSessionLog() {
+  els.log.innerHTML = "";
+  for (const entry of [...state.sessionProcesses].sort((left, right) => right.step - left.step)) {
+    const item = document.createElement("li");
+    item.textContent = `${entry.step}. ${entry.message}`;
+    if (entry.type) item.className = entry.type;
+    els.log.append(item);
+  }
+}
+
+function log(message, type = "", options = {}) {
+  if (options.consoleOnly) {
+    if (type === "error") {
+      console.error(message);
+    } else {
+      console.log(message);
+    }
+    return;
+  }
+  state.sessionProcesses.push({
+    step: nextSessionStep(),
+    message,
+    type,
+  });
+  renderSessionLog();
+}
+
+function logProcess(message, type = "") {
+  state.sessionProcesses.push({
+    step: nextSessionStep(),
+    message,
+    type,
+  });
+  renderSessionLog();
+}
+
+function elapsedSeconds(startedAt) {
+  return Math.max(1, Math.round((performance.now() - startedAt) / 1000));
 }
 
 function showSessionSongTitle(filename) {
-  els.log.innerHTML = "";
-  const item = document.createElement("li");
-  item.className = "success";
-  item.textContent = filename || state.filename || "";
-  els.log.append(item);
+  console.log(filename || state.filename || "");
 }
 
 function updateSelectedSummary() {
@@ -643,6 +764,22 @@ function stopAllAudio() {
     audio.pause();
     audio.currentTime = 0;
   }
+  updateSeekControl();
+}
+
+function unloadAudio(audio) {
+  if (!audio) return;
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+}
+
+function releaseLoadedAudio() {
+  stopMix();
+  for (const { audio } of state.players) {
+    unloadAudio(audio);
+  }
+  unloadAudio(els.sourcePlayer);
 }
 
 function disableAppControls() {
@@ -670,7 +807,9 @@ async function exitApplication() {
       window.close();
     }
     document.body.classList.add("appClosed");
-    els.log.innerHTML = "";
+    state.sessionProcesses = [];
+    state.sessionStep = 0;
+    renderSessionLog();
     log(t("closed"), "success");
   } catch (error) {
     els.exitBtn.disabled = false;
@@ -698,6 +837,19 @@ function updateTools(tools = {}) {
     badge.classList.toggle("missing", !ready);
     badge.textContent = `${toolLabels[name] || name} ${ready ? t("ready") : t("missing")}`;
   }
+  updatePerformanceBadges(tools.performance || {});
+}
+
+function updatePerformanceBadges(performance = {}) {
+  for (const badge of els.toolStatus.querySelectorAll("[data-metric]")) {
+    const name = badge.dataset.metric;
+    const metric = performance[name] || {};
+    badge.classList.add("metric");
+    badge.classList.toggle("ready", name === "gpu" ? Boolean(metric.available) : true);
+    badge.classList.toggle("missing", name === "gpu" && !metric.available);
+    badge.textContent = metric.label || name.toUpperCase();
+    badge.title = badge.textContent;
+  }
 }
 
 async function getStatus() {
@@ -707,16 +859,43 @@ async function getStatus() {
   return data.tools;
 }
 
-function toolsReady(tools = {}) {
-  return Boolean(tools.demucs && tools.ffmpeg && tools.codecs && tools.chords);
+function startStatusPolling() {
+  const refresh = () => {
+    getStatus().catch(() => {});
+    window.setTimeout(refresh, state.analysisRunning ? 1000 : 3000);
+  };
+  window.setTimeout(refresh, 3000);
+}
+
+function toolsReady(tools = {}, model = els.modelSelect?.value || "mvsep_true_accordion") {
+  const separationReady = model === "htdemucs_6s_accordion"
+    ? tools.demucs && tools.mvsepAccordion
+    : model === "mvsep_true_accordion"
+      ? tools.mvsepTrueAccordion
+    : model === "mvsep_accordion"
+      ? tools.mvsepAccordion
+      : tools.demucs;
+  return Boolean(separationReady && tools.ffmpeg && tools.codecs && tools.chords);
 }
 
 async function ensureToolsReady() {
+  log(t("checkingRequirements"));
   const tools = await getStatus();
-  if (toolsReady(tools)) return true;
-  const missing = Object.entries(toolLabels)
-    .filter(([key]) => !tools[key])
-    .map(([, label]) => label)
+  const model = els.modelSelect?.value || "mvsep_true_accordion";
+  if (toolsReady(tools, model)) {
+    log(t("requirementsReady"), "success");
+    return true;
+  }
+  const required = model === "htdemucs_6s_accordion"
+    ? ["demucs", "mvsepAccordion", "ffmpeg", "codecs", "chords"]
+    : model === "mvsep_true_accordion"
+    ? ["mvsepTrueAccordion", "ffmpeg", "codecs", "chords"]
+    : model === "mvsep_accordion"
+    ? ["mvsepAccordion", "ffmpeg", "codecs", "chords"]
+    : ["demucs", "ffmpeg", "codecs", "chords"];
+  const missing = required
+    .filter((key) => !tools[key])
+    .map((key) => toolLabels[key] || key)
     .join(", ");
   log(`Missing requirements: ${missing}. Run setup or install requirements before using DeTrace.`, "error");
   return false;
@@ -736,7 +915,7 @@ async function clearUploads() {
   const confirmed = window.confirm(t("clearConfirm"));
   if (!confirmed) return;
 
-  stopMix();
+  releaseLoadedAudio();
   const response = await fetch("/api/jobs", { method: "DELETE" });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || t("couldNotClearUploads"));
@@ -749,8 +928,10 @@ async function clearUploads() {
   state.chords = [];
   state.activeChordIndex = -1;
   state.players = [];
-  state.jobs = [];
-  setAudioSource(els.sourcePlayer, "");
+  state.jobs = data.jobs || [];
+  state.sessionStep = 0;
+  state.sessionProcesses = [];
+  setAudioSource(els.sourcePlayer, "", t("original"));
   els.stems.innerHTML = "";
   els.separateBtn.disabled = true;
   els.exportBtn.disabled = true;
@@ -759,6 +940,8 @@ async function clearUploads() {
   updateTools(data.tools);
   renderJobs();
   renderChords();
+  renderSessionLog();
+  updateSeekControl();
   log(t("uploadsCleared"), "success");
 }
 
@@ -776,6 +959,7 @@ function renderJobs() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "uploadItem";
+    button.dataset.jobId = job.jobId;
     button.classList.toggle("active", job.jobId === state.jobId);
 
     const title = document.createElement("span");
@@ -787,9 +971,17 @@ function renderJobs() {
     meta.textContent = job.analyzed ? t("tracksFound", { count: job.stems.length }) : t("notAnalyzed");
 
     button.append(title, meta);
-    button.addEventListener("click", () => selectJob(job));
     els.uploadList.append(button);
   }
+}
+
+function selectUploadFromList(event) {
+  const button = event.target.closest(".uploadItem");
+  if (!button) return;
+  const job = state.jobs.find((item) => item.jobId === button.dataset.jobId);
+  if (!job) return;
+  event.preventDefault();
+  selectJob(job).catch((error) => log(error.message, "error"));
 }
 
 function loadJobIntoView(job) {
@@ -798,10 +990,10 @@ function loadJobIntoView(job) {
   state.filename = job.filename;
   state.sourceUrl = job.sourceUrl;
   state.file = null;
-  state.stems = (job.stems || []).map((stem) => ({ ...stem, active: true }));
+  state.stems = (job.stems || []).map((stem) => ({ ...stem, active: defaultStemActive(stem) }));
   state.chords = job.chords || [];
   state.activeChordIndex = -1;
-  setAudioSource(els.sourcePlayer, job.sourceUrl);
+  setAudioSource(els.sourcePlayer, job.sourceUrl, job.filename || t("original"));
   renderStems();
   renderChords();
   syncPlayers();
@@ -827,22 +1019,30 @@ async function selectJob(job) {
 }
 
 async function loadChordsForCurrentJob() {
+  const startedAt = performance.now();
+  logProcess(t("chordsStarted"));
   log(t("detectingChordsLog"));
   const chordResult = await postJson("/api/chords", { jobId: state.jobId });
   updateTools(chordResult.data.tools || {});
   if (!chordResult.response.ok) {
     log(chordResult.data.details || chordResult.data.error || t("chordDetectionFailed"), "error");
-    return;
+    return false;
   }
   state.chords = chordResult.data.chords || [];
   renderChords();
+  log(t("chordsFinished", { seconds: elapsedSeconds(startedAt) }), "success");
+  log(state.chords.length ? t("chordsReady", { count: state.chords.length }) : t("noChordsFound"), "success");
   state.jobs = state.jobs.map((job) => {
     if (job.jobId !== state.jobId) return job;
     return { ...job, chords: state.chords };
   });
+  return true;
 }
 
 async function uploadFile(file) {
+  els.log.innerHTML = "";
+  state.sessionStep = 0;
+  state.sessionProcesses = [];
   state.file = file;
   state.filename = file.name;
   state.stems = [];
@@ -852,16 +1052,16 @@ async function uploadFile(file) {
   els.stems.innerHTML = "";
   renderChords();
   els.stems.setAttribute("aria-busy", "true");
-  setAudioSource(els.sourcePlayer, URL.createObjectURL(file));
+  setAudioSource(els.sourcePlayer, URL.createObjectURL(file), file.name || t("original"));
   els.separateBtn.disabled = true;
   els.exportBtn.disabled = true;
   els.playMixBtn.disabled = true;
   els.stopMixBtn.disabled = true;
-  log(t("uploading", { filename: file.name }));
+  logProcess(t("uploading", { filename: file.name }));
 
   const response = await fetch("/api/upload", {
     method: "POST",
-    headers: { "X-Filename": file.name },
+    headers: { "X-Filename": encodeURIComponent(file.name || "audio.mp3") },
     body: file,
   });
   const data = await response.json();
@@ -870,7 +1070,7 @@ async function uploadFile(file) {
   state.jobId = data.jobId;
   state.filename = data.filename;
   state.sourceUrl = data.sourceUrl;
-  setAudioSource(els.sourcePlayer, data.sourceUrl);
+  setAudioSource(els.sourcePlayer, data.sourceUrl, data.filename || t("original"));
   updateTools(data.tools);
   state.jobs = [{ ...data, stems: [], analyzed: false }, ...state.jobs.filter((job) => job.jobId !== data.jobId)];
   renderJobs();
@@ -891,47 +1091,68 @@ async function postJson(url, payload) {
 }
 
 async function separate() {
+  if (state.analysisRunning) {
+    log("Analysis is already running.");
+    return;
+  }
   const model = els.modelSelect.value;
+  const separationModel = model === "htdemucs_6s_accordion" ? "htdemucs_6s" : model;
+  const startedAt = performance.now();
+  state.analysisRunning = true;
   setBusy(els.separateBtn, true, t("analyzing"));
   els.exportBtn.disabled = true;
   els.playMixBtn.disabled = true;
   els.stopMixBtn.disabled = true;
-  els.stems.innerHTML = "";
+  if (!state.stems.length) {
+    els.stems.innerHTML = "";
+  }
   state.chords = [];
   state.activeChordIndex = -1;
   renderChords();
   els.stems.setAttribute("aria-busy", "true");
   log(t("analyzingWithModel", { model }));
-  log(t("detectingChordsLog"));
+  logProcess(t("separationStarted", { model: separationModel }));
+  const stillRunningTimer = window.setTimeout(() => {
+    log(t("separationStillRunning"));
+  }, 30000);
 
   try {
-    const [stemResult, chordResult] = await Promise.all([
-      postJson("/api/separate", { jobId: state.jobId, model }),
-      postJson("/api/chords", { jobId: state.jobId }),
-    ]);
-    updateTools({ ...(stemResult.data.tools || {}), ...(chordResult.data.tools || {}) });
+    const stemResult = await postJson("/api/separate", { jobId: state.jobId, model: separationModel });
+    window.clearTimeout(stillRunningTimer);
+    updateTools(stemResult.data.tools || {});
 
-    if ((stemResult.response.status === 424 || chordResult.response.status === 424) && await ensureToolsReady()) {
-      return separate();
+    if (stemResult.response.status === 424 && await ensureToolsReady()) {
+      state.analysisRunning = false;
+      return await separate();
     }
     if (!stemResult.response.ok) {
       throw new Error(stemResult.data.details || stemResult.data.error || t("separationFailed"));
     }
+    if (!Array.isArray(stemResult.data.stems) || stemResult.data.stems.length === 0) {
+      throw new Error(stemResult.data.details || "Stem separation finished without producing any tracks.");
+    }
 
-    state.stems = stemResult.data.stems.map((stem) => ({ ...stem, active: true }));
+    const activeById = new Map(state.stems.map((stem) => [stem.id || stem.name, stem.active]));
+    state.stems = stemResult.data.stems.map((stem) => ({
+      ...stem,
+      active: activeById.get(stem.id || stem.name) ?? defaultStemActive(stem),
+    }));
+    log(
+      stemResult.data.cached
+        ? t("separationCached", { model: separationModel })
+        : t("separationReady", { seconds: elapsedSeconds(startedAt) }),
+      "success",
+    );
+    log(t("renderingTracks", {
+      count: state.stems.length,
+      tracks: state.stems.map((stem) => stem.name).join(", "),
+    }), "success");
     renderStems();
     els.exportBtn.disabled = false;
     els.playMixBtn.disabled = false;
     els.stopMixBtn.disabled = false;
-
-    if (chordResult.response.ok) {
-      state.chords = chordResult.data.chords || [];
-      renderChords();
-      log(state.chords.length ? t("chordsReady", { count: state.chords.length }) : t("noChordsFound"), "success");
-    } else {
-      renderChords();
-      log(chordResult.data.details || chordResult.data.error || t("chordDetectionFailed"), "error");
-    }
+    els.separateBtn.textContent = t("analyzeAgain");
+    els.stems.removeAttribute("aria-busy");
 
     await loadJobs();
     state.jobs = state.jobs.map((job) => {
@@ -939,11 +1160,22 @@ async function separate() {
       return { ...job, stems: state.stems, chords: state.chords, analyzed: true };
     });
     showSessionSongTitle(state.filename);
+    if (model === "htdemucs_6s_accordion") {
+      await appendAccordionForCurrentJob();
+    }
+    if (await loadChordsForCurrentJob()) {
+      log(t("sessionReadyToPlay"), "success");
+    }
   } catch (error) {
+    window.clearTimeout(stillRunningTimer);
     log(error.message, "error");
   } finally {
+    window.clearTimeout(stillRunningTimer);
+    state.analysisRunning = false;
     setBusy(els.separateBtn, false);
-    els.separateBtn.textContent = t("analyzeAgain");
+    if (!state.stems.length) {
+      els.separateBtn.textContent = t("analyze");
+    }
     els.stems.removeAttribute("aria-busy");
   }
 }
@@ -968,9 +1200,11 @@ function renderStems() {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = stem.active;
+    checkbox.dataset.stemKey = stemKey(stem);
     checkbox.addEventListener("change", () => {
       stem.active = checkbox.checked;
-      updateSelectedSummary();
+      applyStemSelectionRules(stem);
+      updateStemControls();
       syncPlayers();
     });
     toggle.append(checkbox, t("select"));
@@ -978,19 +1212,36 @@ function renderStems() {
     const audio = document.createElement("audio");
     audio.controls = true;
     audio.preload = "metadata";
-    setAudioSource(audio, stem.url);
-
-    const canvas = document.createElement("canvas");
-    canvas.className = "stemSpectrum";
-    canvas.width = 520;
-    canvas.height = 92;
-    drawSpectrumCanvas(canvas, null, false);
+    setAudioSource(audio, stem.url, stem.name);
+    audio.addEventListener("play", () => {
+      if (!isStemActive(stem) && !state.mixPlaying) {
+        cancelAudioPlay(audio);
+      } else {
+        prepareAudioOutput(audio);
+        applyPreviewGain();
+      }
+    });
+    audio.addEventListener("loadedmetadata", updateSeekControl);
+    audio.addEventListener("timeupdate", updateSeekControl);
+    audio.addEventListener("seeked", updateSeekControl);
+    audio.addEventListener("ended", handleMixPlaybackEnded);
 
     header.append(name, toggle);
-    card.append(header, audio, canvas);
+    card.append(header, audio);
     els.stems.append(card);
-    state.players.push({ stem, audio, canvas });
+    state.players.push({ stem, audio, card });
   }
+  applyPreviewGain();
+  updateSeekControl();
+  updateSelectedSummary();
+  updatePlayedStemHighlights();
+}
+
+function updateStemControls() {
+  els.stems.querySelectorAll('input[type="checkbox"][data-stem-key]').forEach((checkbox) => {
+    const stem = state.stems.find((item) => stemKey(item) === checkbox.dataset.stemKey);
+    if (stem) checkbox.checked = Boolean(stem.active);
+  });
   updateSelectedSummary();
 }
 
@@ -1077,6 +1328,7 @@ function renderChords() {
     button.title = `${formatTime(chord.start)} - ${formatTime(chord.end)}`;
     button.addEventListener("click", () => {
       els.sourcePlayer.currentTime = Math.min(chord.start, total);
+      prepareAudioOutput(els.sourcePlayer);
       els.sourcePlayer.play().catch((error) => log(error.message, "error"));
     });
     els.chordTimeline.append(button);
@@ -1120,11 +1372,61 @@ function updateCurrentChord() {
   }
 }
 
-function playbackTime() {
-  if (state.mixPlaying || state.mixPausedAt > 0) {
-    return currentMixTime();
+async function appendAccordionForCurrentJob() {
+  const jobId = state.jobId;
+  if (!jobId) return;
+  const startedAt = performance.now();
+  log(t("accordionPending"));
+  logProcess(t("accordionStarted"));
+  const stillRunningTimer = window.setTimeout(() => {
+    log(t("accordionStillRunning"));
+  }, 30000);
+  try {
+    const result = await postJson("/api/accordion", { jobId });
+    updateTools(result.data.tools || {});
+    if (result.response.status === 424 && await ensureToolsReady()) {
+      return await appendAccordionForCurrentJob();
+    }
+    if (!result.response.ok) {
+      log(result.data.details || result.data.error || t("accordionFailed"), "error");
+      return;
+    }
+    if (state.jobId !== jobId) return;
+    const activeById = new Map(state.stems.map((stem) => [stem.id || stem.name, stem.active]));
+    state.stems = result.data.stems.map((stem) => ({
+      ...stem,
+      active: activeById.get(stem.id || stem.name) ?? defaultStemActive(stem),
+    }));
+    renderStems();
+    syncPlayers();
+    state.jobs = state.jobs.map((job) => {
+      if (job.jobId !== jobId) return job;
+      return { ...job, stems: state.stems, analyzed: true };
+    });
+    renderJobs();
+    log(
+      result.data.cached
+        ? t("separationCached", { model: "Accordion" })
+        : t("accordionFinished", { seconds: elapsedSeconds(startedAt) }),
+      "success",
+    );
+    log(t("accordionReady"), "success");
+  } finally {
+    window.clearTimeout(stillRunningTimer);
   }
-  return els.sourcePlayer.currentTime || 0;
+}
+
+function applyNoAccordionCacheBust(stems) {
+  const stamp = Date.now();
+  return stems.map((stem) => {
+    if (!isNoAccordionMix(stem)) return stem;
+    const separator = stem.url.includes("?") ? "&" : "?";
+    return { ...stem, url: `${stem.url}${separator}v=${stamp}` };
+  });
+}
+
+function playbackTime() {
+  return currentPlaybackTime();
 }
 
 function startChordTracking() {
@@ -1146,18 +1448,227 @@ function trackChords() {
 }
 
 function activeMixPlayers() {
-  return state.players.filter(({ stem }) => stem.active);
+  return state.players.filter(({ stem }) => isStemActive(stem));
+}
+
+function playerForAudio(audio) {
+  return state.players.find((player) => player.audio === audio) || null;
+}
+
+function stemKey(stem) {
+  return stem?.id || stem?.name || "";
+}
+
+function normalizedStemName(stem) {
+  return String(stem?.name || "").trim().toLowerCase();
+}
+
+function isAccordionStem(stem) {
+  return normalizedStemName(stem) === "accordion";
+}
+
+function isNoAccordionMix(stem) {
+  return normalizedStemName(stem) === "no accordion mix";
+}
+
+function isAccordionBleedStem(stem) {
+  return ["piano", "other"].includes(normalizedStemName(stem));
+}
+
+function isTrueAccordionModelStem(stem) {
+  return String(stemKey(stem)).startsWith("mvsep_true_accordion/");
+}
+
+function defaultStemActive(stem) {
+  return !isNoAccordionMix(stem);
+}
+
+function hasAccordionStem() {
+  return state.stems.some(isAccordionStem);
+}
+
+function applyStemSelectionRules(changedStem) {
+  if (isTrueAccordionModelStem(changedStem)) return;
+
+  if (isAccordionStem(changedStem)) {
+    if (changedStem.active) {
+      state.stems.forEach((stem) => {
+        if (isNoAccordionMix(stem)) stem.active = false;
+      });
+      return;
+    }
+    state.stems.forEach((stem) => {
+      if (isAccordionStem(stem) || isAccordionBleedStem(stem) || isNoAccordionMix(stem)) {
+        stem.active = false;
+      }
+    });
+    return;
+  }
+
+  if (isNoAccordionMix(changedStem) && changedStem.active) {
+    state.stems.forEach((stem) => {
+      if (stem !== changedStem && (isAccordionStem(stem) || isAccordionBleedStem(stem))) {
+        stem.active = false;
+      }
+    });
+    return;
+  }
+
+  if (isAccordionBleedStem(changedStem) && changedStem.active) {
+    const accordion = state.stems.find(isAccordionStem);
+    if (accordion && !accordion.active) {
+      changedStem.active = false;
+    }
+  }
+}
+
+function currentStemFor(stem) {
+  const key = stemKey(stem);
+  return state.stems.find((item) => stemKey(item) === key) || stem;
+}
+
+function isStemActive(stem) {
+  return Boolean(currentStemFor(stem)?.active);
+}
+
+function previewStemGain() {
+  const count = Math.max(1, activeMixPlayers().length);
+  const mixGain = count <= 1 ? 1 : Math.max(0.22, Math.min(0.92, 0.92 / Math.sqrt(count)));
+  return mixGain * state.masterVolume;
+}
+
+function applyPreviewGain() {
+  const gain = previewStemGain();
+  if (els.sourcePlayer) {
+    els.sourcePlayer.volume = 1;
+    const sourceNode = visualizer.nodes.get(els.sourcePlayer);
+    if (sourceNode?.gainNode) sourceNode.gainNode.gain.value = state.masterVolume;
+  }
+  for (const { stem, audio } of state.players) {
+    audio.volume = 1;
+    const node = visualizer.nodes.get(audio);
+    if (node?.gainNode) node.gainNode.gain.value = isStemActive(stem) ? gain : 0;
+    if (isStemActive(stem)) {
+      audio.muted = false;
+      audio.defaultMuted = false;
+    } else {
+      audio.muted = true;
+      audio.defaultMuted = true;
+    }
+  }
+}
+
+function updateLoopButton() {
+  if (!els.loopBtn) return;
+  els.loopBtn.classList.toggle("active", state.loopEnabled);
+  els.loopBtn.setAttribute("aria-pressed", state.loopEnabled ? "true" : "false");
+}
+
+function toggleLoop() {
+  state.loopEnabled = !state.loopEnabled;
+  localStorage.setItem("detrace-loop-enabled", state.loopEnabled ? "1" : "0");
+  updateLoopButton();
+}
+
+function setMasterVolume(value) {
+  const numeric = Number(value);
+  state.masterVolume = Number.isFinite(numeric) ? Math.max(0, Math.min(1, numeric)) : 1;
+  localStorage.setItem("detrace-master-volume", String(state.masterVolume));
+  if (els.volumeControl) {
+    els.volumeControl.value = String(Math.round(state.masterVolume * 100));
+  }
+  if (els.volumeValue) {
+    els.volumeValue.textContent = `${Math.round(state.masterVolume * 100)}%`;
+  }
+  applyPreviewGain();
+}
+
+function clampToneLevel(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(-12, Math.min(12, numeric)) : 0;
+}
+
+function updateToneLed(element, value) {
+  if (!element) return;
+  const lights = [...element.querySelectorAll("i")];
+  const center = Math.floor(lights.length / 2);
+  const steps = Math.round(Math.abs(value) / 12 * center);
+  lights.forEach((light, index) => {
+    light.className = "";
+    const active = index === center
+      || (value > 0 && index > center && index <= center + steps)
+      || (value < 0 && index < center && index >= center - steps);
+    light.classList.toggle("active", active);
+    light.classList.toggle("positive", active && value > 0 && index > center);
+    light.classList.toggle("negative", active && value < 0 && index < center);
+    light.classList.toggle("center", index === center);
+  });
+}
+
+function applyToneControls() {
+  for (const node of visualizer.nodes.values()) {
+    if (node.bassFilter) node.bassFilter.gain.value = state.bassLevel;
+    if (node.trebleFilter) node.trebleFilter.gain.value = state.trebleLevel;
+    if (node.gainNode) node.gainNode.gain.value = node.audio === els.sourcePlayer ? state.masterVolume : node.gainNode.gain.value;
+  }
+  applyPreviewGain();
+}
+
+function setToneLevel(kind, value) {
+  const level = clampToneLevel(value);
+  if (kind === "bass") {
+    state.bassLevel = level;
+    localStorage.setItem("detrace-bass-level", String(level));
+    if (els.bassControl) els.bassControl.value = String(level);
+    if (els.bassValue) els.bassValue.textContent = `${level > 0 ? "+" : ""}${level} dB`;
+    updateToneLed(els.bassLed, level);
+  } else {
+    state.trebleLevel = level;
+    localStorage.setItem("detrace-treble-level", String(level));
+    if (els.trebleControl) els.trebleControl.value = String(level);
+    if (els.trebleValue) els.trebleValue.textContent = `${level > 0 ? "+" : ""}${level} dB`;
+    updateToneLed(els.trebleLed, level);
+  }
+  applyToneControls();
+}
+
+function shouldAudioPlay(audio, token) {
+  const player = playerForAudio(audio);
+  return Boolean(player && state.mixPlaying && audio.dataset.playToken === String(token));
+}
+
+function cancelAudioPlay(audio) {
+  audio.dataset.playToken = "";
+  audio.dataset.starting = "";
+  audio.muted = true;
+  audio.defaultMuted = true;
+  audio.volume = 0;
+  const node = visualizer.nodes.get(audio);
+  if (node?.gainNode) node.gainNode.gain.value = 0;
+  audio.pause();
+}
+
+function stopStaleAudio(audio, token) {
+  if (shouldAudioPlay(audio, token)) {
+    return true;
+  }
+  audio.pause();
+  return false;
 }
 
 function mixMasterPlayer() {
-  return activeMixPlayers().find(({ audio }) => Number.isFinite(audio.currentTime)) || null;
+  return activeMixPlayers().find(({ audio }) => (
+    !audio.paused && !audio.ended && Number.isFinite(audio.currentTime)
+  )) || state.players.find(({ audio }) => (
+    !audio.paused && !audio.ended && Number.isFinite(audio.currentTime)
+  )) || null;
 }
 
 function syncActivePlayerTimes() {
   const master = mixMasterPlayer();
   if (!master) return;
   const masterTime = master.audio.currentTime;
-  for (const { audio } of activeMixPlayers()) {
+  for (const { audio } of state.players) {
     if (audio === master.audio || audio.paused || audio.ended) continue;
     const drift = audio.currentTime - masterTime;
     if (Math.abs(drift) > mixSyncToleranceSeconds) {
@@ -1168,19 +1679,119 @@ function syncActivePlayerTimes() {
 
 function syncPlayers() {
   const hasSelection = state.stems.some((stem) => stem.active);
+  const mixTime = currentMixTime();
   updateSelectedSummary();
   els.exportBtn.disabled = !hasSelection;
   els.playMixBtn.disabled = !hasSelection;
   els.stopMixBtn.disabled = !state.players.length;
+  if (els.rewindBtn) els.rewindBtn.disabled = currentPlaybackDuration() <= 0;
   updatePauseButton();
+  applyPreviewGain();
   for (const { stem, audio } of state.players) {
-    if (!stem.active && !audio.paused) {
-      audio.pause();
+    if (!isStemActive(stem)) {
+      audio.muted = true;
+      audio.defaultMuted = true;
+      audio.volume = 0;
+      if (!state.mixPlaying) {
+        cancelAudioPlay(audio);
+      } else if ((audio.paused || audio.ended) && audio.dataset.starting !== "1") {
+        audio.currentTime = mixTime;
+        playAudioWithRetry(audio).catch((error) => logAudioPlayError(audio, error));
+      } else if (Number.isFinite(audio.currentTime) && Math.abs(audio.currentTime - mixTime) > mixSyncToleranceSeconds) {
+        audio.currentTime = mixTime;
+      }
+      continue;
     }
-    if (stem.active && state.mixPlaying) {
-      ensureAudioNode(audio);
-      audio.currentTime = currentMixTime();
-      audio.play().catch((error) => log(error.message, "error"));
+    audio.muted = false;
+    audio.defaultMuted = false;
+    if (state.mixPlaying) {
+      if (audio.paused || audio.ended) {
+        if (audio.dataset.starting !== "1") {
+          audio.currentTime = mixTime;
+          playAudioWithRetry(audio).then((started) => {
+            if (!started && isStemActive(stem) && audio.dataset.starting !== "1") {
+              log(t("audioPlaySkipped", { track: audioLabel(audio) }));
+            }
+          }).catch((error) => {
+            logAudioPlayError(audio, error);
+          });
+        }
+      } else if (Number.isFinite(audio.currentTime) && Math.abs(audio.currentTime - mixTime) > mixSyncToleranceSeconds) {
+        audio.currentTime = mixTime;
+      }
+    }
+  }
+  applyPreviewGain();
+  updatePlayedStemHighlights();
+}
+
+async function playAudioGroup(players) {
+  const results = await Promise.allSettled(players.map(({ audio }) => playAudioWithRetry(audio)));
+  const failed = results
+    .map((result, index) => ({ result, player: players[index] }))
+    .filter(({ result }) => result.status === "rejected");
+  const started = results
+    .filter((result) => result.status === "fulfilled")
+    .some((result) => result.value === true);
+
+  for (const { result, player } of failed) {
+    logAudioPlayError(player.audio, result.reason);
+  }
+
+  return started;
+}
+
+function logAudioPlayError(audio, error) {
+  if (interruptedPlay(error)) {
+    return;
+  }
+  const reason = error?.message ? ` ${error.message}` : "";
+  log(`${t("audioPlayFailed", { track: audioLabel(audio) })}${reason}`, "error");
+}
+
+function interruptedPlay(error) {
+  const message = error?.message || "";
+  return error?.name === "AbortError"
+    || (/play\(\) request/i.test(message) && /(interrupt|pause|load)/i.test(message))
+    || (/interrupt/i.test(message) && /(pause|load)/i.test(message));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function playAudioWithRetry(audio) {
+  if (audio.dataset.starting === "1") {
+    return false;
+  }
+  const token = String(++state.playToken);
+  audio.dataset.playToken = token;
+  audio.dataset.starting = "1";
+  try {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (!shouldAudioPlay(audio, token)) {
+        audio.muted = true;
+        return false;
+      }
+      prepareAudioOutput(audio);
+      applyPreviewGain();
+      try {
+        await audio.play();
+        return stopStaleAudio(audio, token);
+      } catch (error) {
+        if (!interruptedPlay(error)) {
+          throw error;
+        }
+        await sleep(120 + attempt * 120);
+        if (!stopStaleAudio(audio, token) || (!state.mixPlaying && state.mixPausedAt <= 0)) {
+          return false;
+        }
+      }
+    }
+    return false;
+  } finally {
+    if (audio.dataset.playToken === token) {
+      audio.dataset.starting = "";
     }
   }
 }
@@ -1188,25 +1799,35 @@ function syncPlayers() {
 async function playMix() {
   const activePlayers = activeMixPlayers();
   if (!activePlayers.length) return;
+  const players = state.players;
+  if (!players.length) return;
+  const startAt = currentPlaybackTime();
   els.sourcePlayer.pause();
   stopMix();
   state.mixPlaying = true;
-  state.mixStartedAt = performance.now();
+  state.mixStartedAt = performance.now() - startAt * 1000;
   state.mixPausedAt = 0;
-  for (const { audio } of activePlayers) {
-    ensureAudioNode(audio);
-    audio.currentTime = 0;
+  for (const { audio } of players) {
+    audio.currentTime = startAt;
   }
+  applyPreviewGain();
   startSpectrum();
   startChordTracking();
-  await Promise.all(activePlayers.map(({ audio }) => audio.play()));
+  const anyPlaying = await playAudioGroup(players);
+  if (!anyPlaying) {
+    state.mixPlaying = false;
+    state.mixStartedAt = 0;
+    updatePauseButton();
+    return;
+  }
   syncActivePlayerTimes();
   updatePauseButton();
+  updateSeekControl();
 }
 
 function stopMix() {
   for (const { audio } of state.players) {
-    audio.pause();
+    cancelAudioPlay(audio);
     audio.currentTime = 0;
   }
   state.mixPlaying = false;
@@ -1214,12 +1835,61 @@ function stopMix() {
   state.mixPausedAt = 0;
   updateCurrentChord();
   updatePauseButton();
+  updatePlayedStemHighlights();
+  updateSeekControl();
+}
+
+function restartMixFrom(startAt = 0) {
+  const players = state.players;
+  if (!players.length) return;
+  state.mixPlaying = true;
+  state.mixStartedAt = performance.now() - startAt * 1000;
+  state.mixPausedAt = 0;
+  for (const { audio } of players) {
+    audio.currentTime = startAt;
+  }
+  applyPreviewGain();
+  startSpectrum();
+  startChordTracking();
+  playAudioGroup(players).then((started) => {
+    if (!started) {
+      state.mixPlaying = false;
+      state.mixStartedAt = 0;
+      updatePauseButton();
+      updateSeekControl();
+    }
+  }).catch((error) => log(error.message, "error"));
+}
+
+function handleMixPlaybackEnded() {
+  if (!state.mixPlaying) return;
+  const activePlayers = activeMixPlayers();
+  if (!activePlayers.length) return;
+  const duration = mixDuration();
+  const finished = activePlayers.every(({ audio }) => {
+    const audioDuration = finiteDuration(audio) || duration;
+    return audio.ended || audio.paused || audio.currentTime >= audioDuration - 0.08;
+  });
+  if (!finished && currentMixTime() < duration - 0.12) return;
+
+  if (state.loopEnabled) {
+    restartMixFrom(0);
+    return;
+  }
+
+  state.mixPlaying = false;
+  state.mixStartedAt = 0;
+  state.mixPausedAt = 0;
+  updateCurrentChord();
+  updatePauseButton();
+  updateSeekControl();
+  updatePlayedStemHighlights();
 }
 
 function updatePauseButton() {
   if (!els.pauseBtn) return;
   const sourceActive = els.sourcePlayer.src && !els.sourcePlayer.ended && els.sourcePlayer.currentTime > 0;
-  const players = activeMixPlayers();
+  const players = state.players;
   const mixActive = state.mixPlaying || state.mixPausedAt > 0 || players.some(({ audio }) => audio.currentTime > 0);
   const canPause = Boolean(sourceActive || mixActive);
   const paused = sourceActive
@@ -1236,6 +1906,7 @@ async function togglePause() {
   }
   if (!els.sourcePlayer.src) return;
   if (els.sourcePlayer.paused) {
+    prepareAudioOutput(els.sourcePlayer);
     await els.sourcePlayer.play();
     startChordTracking();
   } else {
@@ -1247,11 +1918,13 @@ async function togglePause() {
 async function toggleMixPause() {
   const activePlayers = activeMixPlayers();
   if (!activePlayers.length) return;
+  const players = state.players;
+  if (!players.length) return;
 
   if (state.mixPlaying) {
     state.mixPausedAt = currentMixTime();
-    for (const { audio } of activePlayers) {
-      audio.pause();
+    for (const { audio } of players) {
+      cancelAudioPlay(audio);
     }
     state.mixPlaying = false;
     state.mixStartedAt = 0;
@@ -1264,13 +1937,20 @@ async function toggleMixPause() {
   state.mixPlaying = true;
   state.mixStartedAt = performance.now() - resumeAt * 1000;
   state.mixPausedAt = 0;
-  for (const { audio } of activePlayers) {
-    ensureAudioNode(audio);
+  for (const { audio } of players) {
     audio.currentTime = resumeAt;
   }
+  applyPreviewGain();
   startSpectrum();
   startChordTracking();
-  await Promise.all(activePlayers.map(({ audio }) => audio.play()));
+  const anyPlaying = await playAudioGroup(players);
+  if (!anyPlaying) {
+    state.mixPlaying = false;
+    state.mixStartedAt = 0;
+    state.mixPausedAt = resumeAt;
+    updatePauseButton();
+    return;
+  }
   syncActivePlayerTimes();
   updatePauseButton();
 }
@@ -1288,16 +1968,98 @@ function currentMixTime() {
   return Math.min(elapsed, Math.max(...durations));
 }
 
+function formatClock(seconds) {
+  const safeSeconds = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+  const minutes = Math.floor(safeSeconds / 60);
+  const wholeSeconds = Math.floor(safeSeconds % 60);
+  return `${minutes}:${String(wholeSeconds).padStart(2, "0")}`;
+}
+
+function finiteDuration(audio) {
+  return audio && Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+}
+
+function mixDuration() {
+  return Math.max(0, ...state.players.map(({ audio }) => finiteDuration(audio)));
+}
+
+function playerTimelineActive() {
+  return state.mixPlaying
+    || state.mixPausedAt > 0
+    || state.players.some(({ audio }) => Number.isFinite(audio.currentTime) && audio.currentTime > 0);
+}
+
+function currentPlaybackDuration() {
+  return playerTimelineActive() ? mixDuration() : Math.max(finiteDuration(els.sourcePlayer), mixDuration());
+}
+
+function currentPlaybackTime() {
+  if (playerTimelineActive()) return currentMixTime();
+  return Number.isFinite(els.sourcePlayer.currentTime) ? els.sourcePlayer.currentTime : 0;
+}
+
+function updateSeekControl() {
+  if (!els.seekControl) return;
+  const duration = currentPlaybackDuration();
+  const current = Math.min(currentPlaybackTime(), duration || currentPlaybackTime());
+  els.seekControl.disabled = duration <= 0;
+  els.seekControl.max = String(duration || 0);
+  if (!state.seeking) {
+    els.seekControl.value = String(current || 0);
+  }
+  if (els.seekCurrent) {
+    const displayCurrent = state.seeking ? Number(els.seekControl.value) : current;
+    els.seekCurrent.textContent = formatClock(displayCurrent);
+  }
+  if (els.seekDuration) {
+    els.seekDuration.textContent = formatClock(duration);
+  }
+  if (els.rewindBtn) {
+    els.rewindBtn.disabled = duration <= 0;
+  }
+}
+
+function seekTo(value) {
+  const duration = currentPlaybackDuration();
+  const target = Math.max(0, Math.min(Number(value) || 0, duration || Number(value) || 0));
+  if (finiteDuration(els.sourcePlayer)) {
+    els.sourcePlayer.currentTime = Math.min(target, finiteDuration(els.sourcePlayer));
+  }
+  for (const { audio } of state.players) {
+    if (finiteDuration(audio)) {
+      audio.currentTime = Math.min(target, finiteDuration(audio));
+    }
+  }
+  if (state.mixPlaying) {
+    state.mixStartedAt = performance.now() - target * 1000;
+    syncPlayers();
+  } else if (state.mixPausedAt > 0 || state.players.length) {
+    state.mixPausedAt = target;
+  }
+  updateCurrentChord();
+  updatePauseButton();
+  updateSeekControl();
+}
+
+function rewindPlayback(seconds = 10) {
+  seekTo(Math.max(0, currentPlaybackTime() - seconds));
+}
+
 async function exportMix() {
   setBusy(els.exportBtn, true, t("exporting"));
-  log(t("exportingTracks"));
+  logProcess(t("exportingTracks"));
 
   try {
-    const active = state.stems.filter((stem) => stem.active).map((stem) => stem.name);
+    const active = state.stems.filter((stem) => stem.active).map((stem) => stem.id || stem.name);
     const response = await fetch("/api/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jobId: state.jobId, stems: active }),
+      body: JSON.stringify({
+        jobId: state.jobId,
+        stems: active,
+        bass: state.bassLevel,
+        treble: state.trebleLevel,
+      }),
     });
     const data = await response.json();
     updateTools(data.tools);
@@ -1352,24 +2114,71 @@ function downloadFile(url, filename) {
 }
 
 function ensureAudioNode(audio) {
+  if (!audio) return null;
   if (!visualizer.context) {
     const AudioApi = window.AudioContext || window.webkitAudioContext;
+    if (!AudioApi) return null;
     visualizer.context = new AudioApi();
   }
   if (visualizer.context.state === "suspended") {
-    visualizer.context.resume();
+    visualizer.context.resume().catch(() => {});
   }
-  if (!visualizer.nodes.has(audio)) {
+  const existing = visualizer.nodes.get(audio);
+  if (existing) return existing;
+
+  try {
     const analyser = visualizer.context.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.78;
-    const data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.72;
     const source = visualizer.context.createMediaElementSource(audio);
-    source.connect(analyser);
+    const bassFilter = visualizer.context.createBiquadFilter();
+    bassFilter.type = "lowshelf";
+    bassFilter.frequency.value = 160;
+    bassFilter.gain.value = state.bassLevel;
+    const trebleFilter = visualizer.context.createBiquadFilter();
+    trebleFilter.type = "highshelf";
+    trebleFilter.frequency.value = 4200;
+    trebleFilter.gain.value = state.trebleLevel;
+    const gainNode = visualizer.context.createGain();
+    gainNode.gain.value = audio === els.sourcePlayer ? state.masterVolume : 0;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    source.connect(bassFilter);
+    bassFilter.connect(trebleFilter);
+    trebleFilter.connect(gainNode);
+    gainNode.connect(analyser);
     analyser.connect(visualizer.context.destination);
-    visualizer.nodes.set(audio, { source, analyser, data });
+    const node = { analyser, audio, bassFilter, data, gainNode, source, trebleFilter };
+    visualizer.nodes.set(audio, node);
+    applyPreviewGain();
+    return node;
+  } catch {
+    return null;
   }
-  return visualizer.nodes.get(audio);
+}
+
+function stemSignalPeak(audio) {
+  const node = ensureAudioNode(audio);
+  if (!node) return 0;
+  node.analyser.getByteFrequencyData(node.data);
+  let peak = 0;
+  for (const value of node.data) {
+    if (value > peak) peak = value;
+  }
+  return peak;
+}
+
+function playerIsAudible({ stem, audio }) {
+  const gain = visualizer.nodes.get(audio)?.gainNode?.gain.value ?? 0;
+  if (!isStemActive(stem) || audio.paused || audio.ended || audio.muted || gain <= 0) {
+    return false;
+  }
+  return stemSignalPeak(audio) >= playedStemPeakThreshold;
+}
+
+function updatePlayedStemHighlights() {
+  for (const player of state.players) {
+    player.card?.classList.toggle("playingStem", playerIsAudible(player));
+  }
 }
 
 function startSpectrum() {
@@ -1380,15 +2189,12 @@ function startSpectrum() {
 function drawSpectrum() {
   const canvas = els.spectrumCanvas;
   const activeAudios = [els.sourcePlayer, ...state.players.map(({ audio }) => audio)].filter((audio) => !audio.paused);
-  const active = activeAudios.length > 0;
-  const masterNode = activeAudios.map((audio) => visualizer.nodes.get(audio)).find(Boolean);
+  const nodes = activeAudios.map((audio) => ensureAudioNode(audio)).filter(Boolean);
+  const active = nodes.length > 0;
 
-  drawSpectrumCanvas(canvas, masterNode, active);
-
-  for (const { audio, canvas: stemCanvas } of state.players) {
-    const node = visualizer.nodes.get(audio);
-    drawSpectrumCanvas(stemCanvas, node, !audio.paused);
-  }
+  drawSpectrumCanvas(canvas, mixFrequencyData(nodes), active);
+  updatePlayedStemHighlights();
+  updateSeekControl();
 
   if (active) {
     visualizer.frame = requestAnimationFrame(drawSpectrum);
@@ -1397,7 +2203,23 @@ function drawSpectrum() {
   }
 }
 
-function drawSpectrumCanvas(canvas, node, active) {
+function mixFrequencyData(nodes) {
+  if (!nodes.length) return null;
+  const length = nodes[0].data.length;
+  if (!visualizer.mixData || visualizer.mixData.length !== length) {
+    visualizer.mixData = new Uint8Array(length);
+  }
+  visualizer.mixData.fill(0);
+  for (const node of nodes) {
+    node.analyser.getByteFrequencyData(node.data);
+    for (let index = 0; index < length; index += 1) {
+      visualizer.mixData[index] = Math.max(visualizer.mixData[index], node.data[index]);
+    }
+  }
+  return visualizer.mixData;
+}
+
+function drawSpectrumCanvas(canvas, frequencyData, active) {
   const context = canvas.getContext("2d");
   const width = canvas.width;
   const height = canvas.height;
@@ -1406,7 +2228,7 @@ function drawSpectrumCanvas(canvas, node, active) {
   context.fillStyle = "#11191d";
   context.fillRect(0, 0, width, height);
 
-  if (!node || !active) {
+  if (!active || !frequencyData) {
     context.fillStyle = "rgba(248, 251, 249, 0.18)";
     const centerY = Math.round(height * 0.5);
     for (let x = 0; x < width; x += 18) {
@@ -1415,13 +2237,19 @@ function drawSpectrumCanvas(canvas, node, active) {
     return;
   }
 
-  node.analyser.getByteFrequencyData(node.data);
-  const bars = node.data.length;
+  const bars = width > 900 ? 80 : 48;
   const gap = width > 600 ? 3 : 2;
   const barWidth = Math.max(2, (width - gap * bars) / bars);
+  const usableBins = Math.floor(frequencyData.length * 0.72);
 
   for (let index = 0; index < bars; index += 1) {
-    const value = node.data[index] / 255;
+    const start = Math.floor((index / bars) ** 1.35 * usableBins);
+    const end = Math.max(start + 1, Math.floor(((index + 1) / bars) ** 1.35 * usableBins));
+    let peak = 0;
+    for (let bin = start; bin < end; bin += 1) {
+      peak = Math.max(peak, frequencyData[bin] || 0);
+    }
+    const value = Math.min(1, Math.max(0.015, peak / 255));
     const barHeight = Math.max(3, value * (height - 16));
     const x = index * (barWidth + gap);
     const y = height - barHeight;
@@ -1463,31 +2291,84 @@ els.dropzone.addEventListener("drop", (evt) => {
 els.separateBtn.addEventListener("click", separate);
 els.exportBtn.addEventListener("click", exportMix);
 els.exitBtn.addEventListener("click", () => exitApplication());
+els.uploadList.addEventListener("click", selectUploadFromList);
 els.playMixBtn.addEventListener("click", playMix);
 els.pauseBtn.addEventListener("click", () => togglePause().catch((error) => log(error.message, "error")));
 els.stopMixBtn.addEventListener("click", stopMix);
+els.rewindBtn?.addEventListener("click", () => rewindPlayback());
+els.loopBtn?.addEventListener("click", toggleLoop);
+els.volumeControl?.addEventListener("input", () => {
+  setMasterVolume(Number(els.volumeControl.value) / 100);
+});
+els.bassControl?.addEventListener("input", () => {
+  setToneLevel("bass", els.bassControl.value);
+});
+els.trebleControl?.addEventListener("input", () => {
+  setToneLevel("treble", els.trebleControl.value);
+});
+els.seekControl?.addEventListener("pointerdown", () => {
+  state.seeking = true;
+});
+els.seekControl?.addEventListener("input", () => {
+  state.seeking = true;
+  updateSeekControl();
+  seekTo(els.seekControl.value);
+});
+els.seekControl?.addEventListener("change", () => {
+  seekTo(els.seekControl.value);
+  state.seeking = false;
+  updateSeekControl();
+});
+els.seekControl?.addEventListener("pointerup", () => {
+  state.seeking = false;
+  updateSeekControl();
+});
+els.sourcePlayer.addEventListener("play", () => prepareAudioOutput(els.sourcePlayer));
+els.sourcePlayer.addEventListener("play", startSpectrum);
 els.sourcePlayer.addEventListener("play", startChordTracking);
 els.sourcePlayer.addEventListener("play", updatePauseButton);
 els.sourcePlayer.addEventListener("playing", updatePauseButton);
 els.sourcePlayer.addEventListener("timeupdate", updateCurrentChord);
 els.sourcePlayer.addEventListener("timeupdate", updatePauseButton);
+els.sourcePlayer.addEventListener("timeupdate", updateSeekControl);
+els.sourcePlayer.addEventListener("loadedmetadata", updateSeekControl);
 els.sourcePlayer.addEventListener("seeked", updateCurrentChord);
 els.sourcePlayer.addEventListener("seeked", updatePauseButton);
+els.sourcePlayer.addEventListener("seeked", updateSeekControl);
 els.sourcePlayer.addEventListener("pause", () => {
   updateCurrentChord();
   updatePauseButton();
+  updateSeekControl();
 });
 els.sourcePlayer.addEventListener("ended", () => {
+  if (state.loopEnabled) {
+    els.sourcePlayer.currentTime = 0;
+    prepareAudioOutput(els.sourcePlayer);
+    els.sourcePlayer.play().catch((error) => logAudioPlayError(els.sourcePlayer, error));
+    startSpectrum();
+    startChordTracking();
+  }
   updateCurrentChord();
   updatePauseButton();
+  updateSeekControl();
 });
 els.clearUploadsBtn.addEventListener("click", () => clearUploads().catch((error) => log(error.message, "error")));
 els.languageSelect.addEventListener("change", () => {
   currentLanguage = els.languageSelect.value;
   applyLanguage();
 });
+els.modelSelect.addEventListener("change", () => {
+  if (!state.jobId || state.analysisRunning) return;
+  separate().catch((error) => log(error.message, "error"));
+});
 
 buildPianoKeyboard();
+setMasterVolume(state.masterVolume);
+setToneLevel("bass", state.bassLevel);
+setToneLevel("treble", state.trebleLevel);
+updateLoopButton();
+updateSeekControl();
 applyLanguage();
 getStatus().catch(() => log(t("couldNotReadStatus"), "error"));
+startStatusPolling();
 loadJobs().catch((error) => log(error.message, "error"));

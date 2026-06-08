@@ -8,3 +8,7 @@ wheelhouse/
 *.spec
 .detrace-app/
 .detrace-runtime/
+installer/
+installer-src/bin/
+installer-src/obj/
+installer-src/payload/

@@ -34,9 +34,13 @@
             </label>
             <div class="status" id="toolStatus">
               <span data-tool="demucs">Demucs</span>
+              <span data-tool="mvsepAccordion">MVSep Accordion</span>
               <span data-tool="ffmpeg">FFmpeg</span>
               <span data-tool="codecs">Codecs</span>
               <span data-tool="chords">Chords</span>
+              <span class="metric" data-metric="gpu">GPU</span>
+              <span class="metric" data-metric="cpu">CPU</span>
+              <span class="metric" data-metric="ram">RAM</span>
             </div>
           </div>
         </header>
@@ -52,18 +56,11 @@
             </div>
             <button id="chooseBtn" type="button" data-i18n="chooseMp3">Choose MP3</button>
           </div>
-          <label class="inlineModel" for="modelSelect">
-            <span data-i18n="stemModel">Stem model</span>
-            <select id="modelSelect">
-              <option value="htdemucs_6s" selected data-i18n="model6">6 stems: vocals, drums, bass, guitar, piano, other</option>
-              <option value="htdemucs" data-i18n="model4">4 stems: vocals, drums, bass, other</option>
-            </select>
-          </label>
+          <select id="modelSelect" hidden aria-hidden="true">
+            <option value="mvsep_true_accordion" selected>Full instrument stems: MVSep Mega 53 local model</option>
+          </select>
           <div class="dropControls">
             <div class="mixPreview">
-              <button id="playMixBtn" type="button" disabled data-i18n="playSelected">Play Selected</button>
-              <button id="pauseBtn" type="button" disabled data-i18n="pause">Pause</button>
-              <button id="stopMixBtn" type="button" disabled data-i18n="stop">Stop</button>
               <button id="separateBtn" type="button" disabled data-i18n="analyzeAgain">Analyze Again</button>
               <button id="exportBtn" type="button" disabled data-i18n="exportMp3">Export MP3</button>
             </div>
@@ -74,6 +71,41 @@
           <div class="originalPreview">
             <label data-i18n="original">Original</label>
             <audio id="sourcePlayer" controls></audio>
+            <label class="seekControl">
+              <span data-i18n="position">Position</span>
+              <input id="seekControl" type="range" min="0" max="0" step="0.01" value="0" aria-label="Song position">
+              <output><span id="seekCurrent">0:00</span> / <span id="seekDuration">0:00</span></output>
+            </label>
+            <div class="mixPreview playerButtons">
+              <button id="rewindBtn" type="button" disabled data-i18n="rewind">Rewind</button>
+              <button id="playMixBtn" type="button" disabled data-i18n="playSelected">Play Selected</button>
+              <button id="pauseBtn" type="button" disabled data-i18n="pause">Pause</button>
+              <button id="stopMixBtn" type="button" disabled data-i18n="stop">Stop</button>
+              <button id="loopBtn" type="button" aria-pressed="false" data-i18n="loop">Loop</button>
+            </div>
+            <div class="audioControls" aria-label="Playback controls">
+              <label class="volumeControl">
+                <span data-i18n="volume">Volume</span>
+                <input id="volumeControl" type="range" min="0" max="100" value="100" aria-label="Volume">
+                <output id="volumeValue">100%</output>
+              </label>
+              <label class="toneControl">
+                <span data-i18n="bass">Bass</span>
+                <input id="bassControl" type="range" min="-12" max="12" step="1" value="0" aria-label="Bass">
+                <output id="bassValue">0 dB</output>
+                <span id="bassLed" class="levelLeds" aria-hidden="true">
+                  <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                </span>
+              </label>
+              <label class="toneControl">
+                <span data-i18n="treble">Treble</span>
+                <input id="trebleControl" type="range" min="-12" max="12" step="1" value="0" aria-label="Treble">
+                <output id="trebleValue">0 dB</output>
+                <span id="trebleLed" class="levelLeds" aria-hidden="true">
+                  <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                </span>
+              </label>
+            </div>
           </div>
           <div class="selectedPreviewPanel">
             <label data-i18n="selectedPreview">Selected instrument preview</label>
