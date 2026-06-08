@@ -6,7 +6,7 @@ DeTrace is a local Windows desktop app for separating an MP3 into playable instr
 
 <img width="1918" height="1030" alt="image" src="https://github.com/user-attachments/assets/9d948a30-5fda-4439-beec-8f80f5553428" />
 
-<img width="1915" height="1026" alt="image" src="https://github.com/user-attachments/assets/5f471f34-da1d-4c68-abca-25f1bd370091" />
+<img width="1899" height="1032" alt="image" src="https://github.com/user-attachments/assets/ae367163-ca4e-4ebd-90ed-cbf67fa20ff7" />
 
 ## Features
 
