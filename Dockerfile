@@ -15,8 +15,8 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN python render_setup.py
+RUN python deploy_setup.py
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "python render_setup.py && gunicorn detrace.wsgi --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 4 --timeout 1800"]
+CMD ["sh", "-c", "python deploy_setup.py && gunicorn detrace.wsgi --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 4 --timeout 1800"]

@@ -92,29 +92,9 @@ Open [http://localhost:5180](http://localhost:5180) in your browser.
 
 If that port is busy, DeTrace automatically uses the next available port.
 
-## Render Deployment
-
-Use the Python environment on Render and install dependencies from `requirements.txt`.
-
-Build command:
-
-```bash
-pip install -r requirements.txt && python render_setup.py
-```
-
-Start command:
-
-```bash
-python render_setup.py && gunicorn detrace.wsgi --workers 1 --threads 4 --timeout 1800
-```
-
-The included `render.yaml` uses those commands. `render_setup.py` downloads the MVSep source, accordion config/checkpoint, and true multi-stem accordion config/checkpoint during the Render build so the `MVSep Accordion` and `True Accordion` readiness checks can pass in the deployed app.
-
-GPU acceleration on Render requires a service instance that exposes an NVIDIA GPU. If your Render service has a GPU available, set `DETRACE_ENABLE_CUDA=1` so `render_setup.py` installs CUDA-enabled PyTorch. Keep `DETRACE_MVSEP_FORCE_CPU=0`; setting it to `1` forces MVSep to ignore CUDA.
-
 ## Fly.io Deployment
 
-The repo includes a `Dockerfile` and `fly.toml` for Fly.io. The container listens on `0.0.0.0:8080`, installs dependencies, and runs the same MVSep setup used by Render.
+The repo includes a `Dockerfile` and `fly.toml` for Fly.io. The container listens on `0.0.0.0:8080`, installs dependencies, and runs `deploy_setup.py` to download the MVSep source, accordion config/checkpoint, and true multi-stem accordion config/checkpoint.
 
 Deploy:
 

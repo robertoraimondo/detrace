@@ -207,7 +207,7 @@ def main() -> int:
     if not valid_file(TRUE_MVSEP_CHECKPOINT_FILE, MIN_MVSEP_CHECKPOINT_BYTES):
         raise RuntimeError(f"Missing true MVSep checkpoint at {TRUE_MVSEP_CHECKPOINT_FILE}")
 
-    print("MVSep Accordion and True Accordion are ready for Render.", flush=True)
+    print("MVSep Accordion and True Accordion are ready.", flush=True)
     return 0
 
 
