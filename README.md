@@ -92,6 +92,18 @@ Open [http://localhost:5180](http://localhost:5180) in your browser.
 
 If that port is busy, DeTrace automatically uses the next available port.
 
+## Render Deployment
+
+Use the Python environment on Render and install dependencies from `requirements.txt`.
+
+Start command:
+
+```bash
+gunicorn detrace.wsgi
+```
+
+The `detrace.wsgi` module adapts the existing DeTrace HTTP handler for Gunicorn.
+
 ## Separation Models
 
 The app uses **Full instrument stems: MVSep Mega 53 local model** as its separation workflow. It runs the local MVSep model, keeps audible instrument outputs, and lets you preview, mute, remove, and export the selected stems from that full model result.

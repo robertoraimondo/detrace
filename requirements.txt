@@ -10,3 +10,4 @@ beartype==0.14.1
 rotary-embedding-torch==0.3.5
 loralib
 matplotlib
+gunicorn
