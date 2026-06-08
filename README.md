@@ -112,6 +112,23 @@ The included `render.yaml` uses those commands. `render_setup.py` downloads the 
 
 GPU acceleration on Render requires a service instance that exposes an NVIDIA GPU. If your Render service has a GPU available, set `DETRACE_ENABLE_CUDA=1` so `render_setup.py` installs CUDA-enabled PyTorch. Keep `DETRACE_MVSEP_FORCE_CPU=0`; setting it to `1` forces MVSep to ignore CUDA.
 
+## Fly.io Deployment
+
+The repo includes a `Dockerfile` and `fly.toml` for Fly.io. The container listens on `0.0.0.0:8080`, installs dependencies, and runs the same MVSep setup used by Render.
+
+Deploy:
+
+```bash
+flyctl deploy -a detrace
+```
+
+If Fly reports `unauthorized` while building or pushing the image, refresh the Fly login and retry:
+
+```bash
+flyctl auth logout
+flyctl auth login
+```
+
 ## Separation Models
 
 The app uses **Full instrument stems: MVSep Mega 53 local model** as its separation workflow. It runs the local MVSep model, keeps audible instrument outputs, and lets you preview, mute, remove, and export the selected stems from that full model result.
