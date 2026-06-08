@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 import urllib.request
 import zipfile
@@ -32,6 +33,7 @@ MVSEP_CHECKPOINT_URL = os.environ.get(
     "https://huggingface.co/noblebarkrr/BS-Roformer-MVSep-Mega-53-stems/resolve/main/v1/"
     "bs_mega_53stem_accordion_mvsep.ckpt",
 )
+CUDA_TORCH_INDEX_URL = os.environ.get("DETRACE_CUDA_TORCH_INDEX_URL", "https://download.pytorch.org/whl/cu128")
 
 
 def valid_file(path: Path, min_bytes: int) -> bool:
@@ -113,11 +115,34 @@ def install_mvsep_model() -> None:
         print(f"MVSep checkpoint already exists at {MVSEP_CHECKPOINT_FILE}", flush=True)
 
 
+def install_cuda_torch() -> None:
+    if os.environ.get("DETRACE_ENABLE_CUDA", "").strip().lower() not in {"1", "true", "yes"}:
+        print("Skipping CUDA PyTorch install because DETRACE_ENABLE_CUDA is not enabled.", flush=True)
+        return
+
+    print(f"Installing CUDA-enabled PyTorch from {CUDA_TORCH_INDEX_URL}", flush=True)
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "torch",
+            "torchaudio",
+            "--index-url",
+            CUDA_TORCH_INDEX_URL,
+        ],
+        check=True,
+    )
+
+
 def main() -> int:
     if os.environ.get("DETRACE_SKIP_MVSEP_SETUP", "").strip().lower() in {"1", "true", "yes"}:
         print("Skipping MVSep setup because DETRACE_SKIP_MVSEP_SETUP is set.", flush=True)
         return 0
 
+    install_cuda_torch()
     install_mvsep_repo()
     install_mvsep_model()
 

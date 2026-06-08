@@ -6,4 +6,6 @@ services:
     startCommand: gunicorn detrace.wsgi
     envVars:
       - key: DETRACE_MVSEP_FORCE_CPU
-        value: "1"
+        value: "0"
+      - key: DETRACE_ENABLE_CUDA
+        value: "0"
