@@ -2,12 +2,6 @@
 
 DeTrace is a local Windows desktop app for separating an MP3 into playable instrument stems, muting or removing tracks, previewing the remaining mix in sync, detecting chords, and exporting a new MP3.
 
-<img width="1919" height="1031" alt="image" src="https://github.com/user-attachments/assets/703b3094-ec08-4825-a868-00c942d9fb94" />
-
-<img width="1918" height="1030" alt="image" src="https://github.com/user-attachments/assets/9d948a30-5fda-4439-beec-8f80f5553428" />
-
-<img width="1899" height="1032" alt="image" src="https://github.com/user-attachments/assets/ae367163-ca4e-4ebd-90ed-cbf67fa20ff7" />
-
 ## Features
 
 - Local MP3 upload, analysis, preview, and export.
