@@ -4,6 +4,7 @@ param(
     [string]$CertificateThumbprint = $env:DETRACE_SIGN_CERT_THUMBPRINT,
     [string]$PfxPath = $env:DETRACE_SIGN_CERT_PFX,
     [string]$PfxPassword = $env:DETRACE_SIGN_CERT_PASSWORD,
+    [string]$ExportCertificatePath,
     [switch]$SkipTrust,
     [switch]$NoCreate
 )
@@ -123,6 +124,16 @@ foreach ($path in $Paths) {
         Write-Warning "Signed, but Windows does not fully trust the certificate yet. Status: $($signature.Status). $($signature.StatusMessage)"
     }
     Write-Host "Signed: $resolved"
+}
+
+if ($ExportCertificatePath) {
+    $resolvedExportPath = Join-Path $PSScriptRoot $ExportCertificatePath
+    $exportDirectory = Split-Path -Parent $resolvedExportPath
+    if ($exportDirectory) {
+        New-Item -ItemType Directory -Path $exportDirectory -Force | Out-Null
+    }
+    Export-Certificate -Cert $cert -FilePath $resolvedExportPath | Out-Null
+    Write-Host "Exported public certificate: $resolvedExportPath"
 }
 
 Write-Host "Certificate: $($cert.Subject)"

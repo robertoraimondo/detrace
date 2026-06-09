@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.Win32;
+using System.Windows.Forms;
 
 internal static class Program
 {
@@ -24,6 +26,7 @@ internal static class Program
             StopRunningPythonApp();
             Directory.CreateDirectory(installDir);
             Directory.CreateDirectory(Path.Combine(installDir, ".detrace-pyi"));
+            OfferCertificateTrust(installDir);
             ExtractApp(exePath);
             CreateShortcuts(exePath, installDir);
             CreateUninstaller(installDir);
@@ -213,6 +216,67 @@ internal static class Program
             ? Directory.EnumerateFiles(installDir, "*", SearchOption.AllDirectories).Sum(path => new FileInfo(path).Length)
             : 0;
         key.SetValue("EstimatedSize", Math.Max(1, sizeBytes / 1024), RegistryValueKind.DWord);
+    }
+
+    private static void OfferCertificateTrust(string installDir)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        DialogResult result = MessageBox.Show(
+            "DeTrace can export the public signing certificate from this setup file and trust it for the current Windows user.\r\n\r\n" +
+            "This helps Windows recognize DeTrace files signed by the same build certificate. The private signing key is not included or installed.\r\n\r\n" +
+            "Install the DeTrace publisher certificate for this user?",
+            "Trust DeTrace publisher certificate",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button2);
+
+        if (result != DialogResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            string setupPath = Environment.ProcessPath ?? Assembly.GetExecutingAssembly().Location;
+            X509Certificate2 certificate = new X509Certificate2(X509Certificate.CreateFromSignedFile(setupPath));
+            string certificatePath = Path.Combine(installDir, "DeTrace-CodeSigning.cer");
+            File.WriteAllBytes(certificatePath, certificate.Export(X509ContentType.Cert));
+
+            TrustCertificateForCurrentUser(certificate, StoreName.Root);
+            TrustCertificateForCurrentUser(certificate, StoreName.TrustedPublisher);
+
+            MessageBox.Show(
+                "The DeTrace public signing certificate was saved and trusted for the current user:\r\n\r\n" + certificatePath,
+                "DeTrace certificate installed",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                "DeTrace setup will continue, but the publisher certificate could not be installed.\r\n\r\n" + ex.Message,
+                "Certificate install skipped",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+    }
+
+    private static void TrustCertificateForCurrentUser(X509Certificate2 certificate, StoreName storeName)
+    {
+        using X509Store store = new X509Store(storeName, StoreLocation.CurrentUser);
+        store.Open(OpenFlags.ReadWrite);
+        X509Certificate2Collection existing = store.Certificates.Find(
+            X509FindType.FindByThumbprint,
+            certificate.Thumbprint,
+            validOnly: false);
+        if (existing.Count == 0)
+        {
+            store.Add(certificate);
+        }
     }
 
     private static void ShowMessage(string title, string message)

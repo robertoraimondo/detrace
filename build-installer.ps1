@@ -63,7 +63,12 @@ if (-not (Test-Path -LiteralPath $outputPath)) {
 
 Remove-IfExists $publishDir
 
-& (Join-Path $PSScriptRoot "sign-app.ps1") -Paths @("dist\DeTrace.exe", "installer\DeTraceSetup.exe") -SkipTrust -NoCreate
+& (Join-Path $PSScriptRoot "sign-app.ps1") `
+    -Paths @("dist\DeTrace.exe", "installer\DeTraceSetup.exe") `
+    -ExportCertificatePath "installer\DeTrace-CodeSigning.cer" `
+    -SkipTrust `
+    -NoCreate
 
 Write-Host "Built installer: installer\DeTraceSetup.exe"
+Write-Host "Exported certificate: installer\DeTrace-CodeSigning.cer"
 Write-Host "Kept executable: dist\DeTrace.exe"
