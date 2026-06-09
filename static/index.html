@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>DeTrace</title>
+    <link rel="icon" href="/assets/detrace-icon.png" type="image/png">
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
@@ -33,8 +34,7 @@
               </select>
             </label>
             <div class="status" id="toolStatus">
-              <span data-tool="demucs">Demucs</span>
-              <span data-tool="mvsepAccordion">MVSep Accordion</span>
+              <span data-tool="mvsepTrueAccordion">MVSep Mega 53</span>
               <span data-tool="ffmpeg">FFmpeg</span>
               <span data-tool="codecs">Codecs</span>
               <span data-tool="chords">Chords</span>
@@ -47,6 +47,7 @@
 
         <section class="dropzone" id="dropzone">
           <input id="fileInput" type="file" accept="audio/mpeg,.mp3" aria-label="Choose MP3 file" title="Choose MP3 file">
+          <input id="folderInput" type="file" accept="audio/mpeg,.mp3" multiple webkitdirectory directory aria-label="Choose MP3 folder" title="Choose MP3 folder">
           <div class="dropGroup">
             <div class="dropText">
               <div>
@@ -54,36 +55,46 @@
                 <span data-i18n="dropHint">or choose a file to analyze vocals and instruments.</span>
               </div>
             </div>
-            <button id="chooseBtn" type="button" data-i18n="chooseMp3">Choose MP3</button>
+          </div>
+          <div class="uploadControlRow">
+            <div class="uploadButtons">
+              <button id="chooseBtn" type="button" data-i18n="chooseMp3">Choose MP3</button>
+              <button id="chooseFolderBtn" type="button">Choose Folder</button>
+            </div>
+            <div class="topAudioPreview" aria-label="Original audio preview">
+              <label data-i18n="original">Original</label>
+              <audio id="sourcePlayer" controls preload="auto"></audio>
+              <label class="seekControl">
+                <span data-i18n="position">Position</span>
+                <input id="seekControl" type="range" min="0" max="0" step="0.01" value="0" aria-label="Song position">
+                <output><span id="seekCurrent">0:00</span> / <span id="seekDuration">0:00</span></output>
+              </label>
+              <div class="bufferControl" aria-label="Memory buffer">
+                <span>Buffer</span>
+                <div class="bufferMeter" aria-hidden="true"><i id="bufferFill"></i></div>
+                <output id="bufferPercent">0%</output>
+              </div>
+              <div class="mixPreview playerButtons">
+                <button id="playMixBtn" type="button" disabled data-i18n="playSelected">Play Selected</button>
+                <button id="pauseBtn" type="button" disabled data-i18n="pause">Pause</button>
+                <button id="stopMixBtn" type="button" disabled data-i18n="stop">Stop</button>
+              </div>
+              <div class="dropControls">
+                <div class="mixPreview actionButtons">
+                  <button id="separateBtn" type="button" disabled data-i18n="analyzeAgain">Analyze Again</button>
+                  <button id="exportBtn" type="button" disabled data-i18n="exportMp3">Export MP3</button>
+                  <button id="exitBtn" class="exitButton" type="button" data-i18n="exitApp">Exit</button>
+                </div>
+              </div>
+            </div>
           </div>
           <select id="modelSelect" hidden aria-hidden="true">
             <option value="mvsep_true_accordion" selected>Full instrument stems: MVSep Mega 53 local model</option>
           </select>
-          <div class="dropControls">
-            <div class="mixPreview">
-              <button id="separateBtn" type="button" disabled data-i18n="analyzeAgain">Analyze Again</button>
-              <button id="exportBtn" type="button" disabled data-i18n="exportMp3">Export MP3</button>
-              <button id="exitBtn" class="exitButton" type="button" data-i18n="exitApp">Exit</button>
-            </div>
-          </div>
         </section>
 
         <section class="transport" aria-label="Audio preview">
           <div class="originalPreview">
-            <label data-i18n="original">Original</label>
-            <audio id="sourcePlayer" controls></audio>
-            <label class="seekControl">
-              <span data-i18n="position">Position</span>
-              <input id="seekControl" type="range" min="0" max="0" step="0.01" value="0" aria-label="Song position">
-              <output><span id="seekCurrent">0:00</span> / <span id="seekDuration">0:00</span></output>
-            </label>
-            <div class="mixPreview playerButtons">
-              <button id="rewindBtn" type="button" disabled data-i18n="rewind">Rewind</button>
-              <button id="playMixBtn" type="button" disabled data-i18n="playSelected">Play Selected</button>
-              <button id="pauseBtn" type="button" disabled data-i18n="pause">Pause</button>
-              <button id="stopMixBtn" type="button" disabled data-i18n="stop">Stop</button>
-              <button id="loopBtn" type="button" aria-pressed="false" data-i18n="loop">Loop</button>
-            </div>
             <div class="audioControls" aria-label="Playback controls">
               <label class="volumeControl">
                 <span data-i18n="volume">Volume</span>

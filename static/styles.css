@@ -12,6 +12,7 @@
   --gold: #b47516;
   --coral: #c95f4f;
   --shadow: 0 18px 45px rgba(16, 36, 42, 0.12);
+  --preview-side-column: minmax(240px, 0.32fr);
 }
 
 * {
@@ -182,6 +183,16 @@ audio {
   min-height: 0;
 }
 
+.uploadsColumn {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  height: 100%;
+  max-height: 100%;
+  min-block-size: 0;
+  overflow: hidden;
+}
+
 .topbar {
   display: flex;
   flex-wrap: wrap;
@@ -283,26 +294,26 @@ h2 {
 }
 
 .status .ready {
-  border-color: color-mix(in srgb, var(--good), white 60%);
+  border-color: #a2cdb7;
   color: var(--good);
-  background: color-mix(in srgb, var(--good), white 91%);
+  background: #eef7f2;
 }
 
 .status .missing {
-  border-color: color-mix(in srgb, var(--bad), white 60%);
+  border-color: #d9a29d;
   color: var(--bad);
-  background: color-mix(in srgb, var(--bad), white 92%);
+  background: #f8eeee;
 }
 
 .status .metric {
   min-width: 140px;
-  border-color: color-mix(in srgb, var(--accent), white 56%);
+  border-color: #96c5cb;
   color: var(--ink);
-  background: color-mix(in srgb, var(--accent), white 88%);
+  background: #eaf4f5;
 }
 
 .status .metric.missing {
-  border-color: color-mix(in srgb, var(--line), black 6%);
+  border-color: #c9d0d6;
   color: var(--muted);
   background: #f7f8f8;
 }
@@ -311,9 +322,9 @@ h2 {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(240px, 0.32fr) auto minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+  grid-template-columns: var(--preview-side-column) minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
   flex: 0 0 auto;
   min-height: 72px;
   margin-bottom: 14px;
@@ -344,9 +355,27 @@ label {
   display: contents;
 }
 
+.uploadControlRow {
+  display: grid;
+  grid-column: 2;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.uploadButtons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(118px, 1fr));
+  gap: 8px;
+  align-self: center;
+  min-width: 0;
+}
+
 .dropText {
   position: relative;
   z-index: 1;
+  grid-column: 1;
   min-width: 0;
   min-height: 54px;
   padding: 9px 12px;
@@ -367,29 +396,103 @@ label {
 }
 
 .dropControls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  justify-content: flex-end;
-  gap: 8px;
+  display: grid;
+  align-items: center;
+  align-self: center;
+  grid-column: 5;
+  grid-row: 1 / span 2;
   min-width: 0;
   max-width: 100%;
-  row-gap: 6px;
 }
 
 .dropControls .mixPreview {
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: stretch;
+  height: auto;
 }
 
-.dropControls > button {
-  flex: 0 0 auto;
+.dropControls .actionButtons {
+  display: grid;
+  grid-template-columns: minmax(88px, 1fr) minmax(82px, 0.95fr) minmax(62px, 0.72fr);
+  gap: 8px;
+  align-items: center;
 }
 
-.dropGroup > button {
-  flex: 0 0 auto;
-  min-height: 54px;
+.dropControls .actionButtons button {
   min-width: 0;
+  min-height: 42px;
+  height: 42px;
+  padding-inline: 8px;
+  font-size: 12px;
+}
+
+.uploadControlRow > button,
+.uploadButtons > button {
+  align-self: center;
+  flex: 0 0 auto;
+  height: 42px;
+  min-height: 42px;
+  min-width: 118px;
   white-space: nowrap;
+}
+
+.topAudioPreview {
+  display: grid;
+  grid-column: 2;
+  grid-template-columns: minmax(124px, 0.34fr) minmax(144px, 0.38fr) minmax(112px, 0.3fr) minmax(266px, 0.72fr) minmax(224px, 0.64fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px 10px;
+  min-width: 0;
+  min-height: 68px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfc;
+}
+
+.topAudioPreview > label:first-child {
+  grid-column: 1;
+  margin: 0;
+  align-self: center;
+}
+
+.topAudioPreview audio {
+  grid-column: 1;
+  min-width: 0;
+  height: 34px;
+}
+
+.topAudioPreview .seekControl {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-height: 46px;
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.topAudioPreview .bufferControl {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  min-height: 46px;
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.topAudioPreview .playerButtons {
+  grid-column: 4;
+  grid-row: 1 / span 2;
+  align-self: center;
+  align-items: center;
+  grid-template-columns: minmax(104px, 1.15fr) minmax(78px, 0.9fr) minmax(78px, 0.9fr);
+  gap: 8px;
+}
+
+.topAudioPreview .playerButtons button {
+  min-height: 42px;
+  height: 42px;
+  min-width: 0;
+  padding-inline: 8px;
+  font-size: 12px;
 }
 
 button,
@@ -463,7 +566,7 @@ button.working:hover {
 .clearButton:hover {
   background: #f3f6f6;
   color: var(--bad);
-  border-color: color-mix(in srgb, var(--bad), white 55%);
+  border-color: #d28f89;
 }
 
 .installButton {
@@ -480,8 +583,9 @@ button.working:hover {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(240px, 0.32fr) minmax(0, 1fr);
+  grid-template-columns: var(--preview-side-column) minmax(0, 1fr);
   gap: 8px;
+  align-items: stretch;
   flex: 0 0 auto;
   margin: 0 0 8px;
 }
@@ -497,6 +601,10 @@ button.working:hover {
   display: grid;
   align-content: start;
   gap: 7px;
+  height: var(--selected-preview-height, 222px);
+  min-height: var(--selected-preview-height, 222px);
+  max-height: var(--selected-preview-height, 222px);
+  overflow: hidden;
 }
 
 .selectedPreviewPanel {
@@ -505,7 +613,10 @@ button.working:hover {
   grid-template-rows: auto minmax(0, 1fr);
   gap: 8px 12px;
   align-items: stretch;
-  min-height: clamp(140px, 20vh, 220px);
+  height: var(--selected-preview-height, 222px);
+  min-height: var(--selected-preview-height, 222px);
+  max-height: var(--selected-preview-height, 222px);
+  overflow: hidden;
 }
 
 .selectedPreviewPanel > label,
@@ -516,7 +627,9 @@ button.working:hover {
 .selectedPreviewPanel > .inlinePanel {
   grid-column: 2;
   grid-row: 1 / span 2;
-  min-height: clamp(120px, 18vh, 190px);
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
 }
 
 label {
@@ -555,7 +668,7 @@ audio {
 }
 
 .playerButtons button.active {
-  border-color: color-mix(in srgb, var(--good), black 8%);
+  border-color: #157846;
   background: var(--good);
   color: #ffffff;
 }
@@ -578,10 +691,14 @@ audio {
 
 .audioControls {
   display: grid;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: 6px;
+  height: 100%;
+  min-height: 0;
 }
 
 .seekControl,
+.bufferControl,
 .volumeControl,
 .toneControl {
   display: grid;
@@ -595,9 +712,12 @@ audio {
   background: #ffffff;
   color: var(--muted);
   text-transform: none;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .seekControl span,
+.bufferControl span,
 .volumeControl span,
 .toneControl > span:first-child {
   grid-column: 1 / -1;
@@ -616,11 +736,30 @@ audio {
 }
 
 .seekControl output,
+.bufferControl output,
 .volumeControl output,
 .toneControl output {
   color: var(--ink);
   font-size: 12px;
   font-weight: 900;
+}
+
+.bufferMeter {
+  width: 100%;
+  min-width: 0;
+  height: 8px;
+  border-radius: 999px;
+  background: #d8e0e4;
+  overflow: hidden;
+}
+
+.bufferMeter i {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--good);
+  transition: width 120ms ease;
 }
 
 .levelLeds {
@@ -722,10 +861,10 @@ audio {
 
 #currentChord {
   min-width: 64px;
-  border: 1px solid color-mix(in srgb, var(--accent), white 62%);
+  border: 1px solid #a3cdd2;
   border-radius: 8px;
   padding: 4px 8px;
-  background: color-mix(in srgb, var(--accent), white 91%);
+  background: #eff8f9;
   color: var(--accent);
   text-align: center;
   font-size: 13px;
@@ -745,7 +884,6 @@ audio {
   background: linear-gradient(180deg, #eef3f2, #dce7e6);
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
 }
 
 .pianoKeyboard::before {
@@ -811,7 +949,6 @@ audio {
   overflow-x: auto;
   overflow-y: hidden;
   scroll-behavior: smooth;
-  scrollbar-width: thin;
 }
 
 .chordItem {
@@ -906,15 +1043,15 @@ audio {
 }
 
 .stem.playingStem {
-  border-color: color-mix(in srgb, var(--good), white 18%);
-  background: color-mix(in srgb, var(--good), white 91%);
+  border-color: #45a270;
+  background: #eef7f2;
   box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--good), white 70%),
+    0 0 0 2px #bbdac9,
     0 10px 26px rgba(16, 36, 42, 0.08);
 }
 
 .stem.playingStem .stemName {
-  color: color-mix(in srgb, var(--good), black 22%);
+  color: #12663b;
 }
 
 .stemHeader {
@@ -951,27 +1088,51 @@ audio {
 
 .uploadList {
   display: grid;
-  gap: 8px;
-  margin-top: 8px;
-  flex: 1 1 auto;
+  align-content: start;
+  gap: 12px;
+  margin-top: 0;
   min-height: 0;
-  overflow-y: auto;
+  block-size: 100%;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
   padding-right: 6px;
-  scrollbar-width: thin;
+}
+
+.uploadList::-webkit-scrollbar {
+  width: 10px;
+}
+
+.uploadList::-webkit-scrollbar-track {
+  background: #e8eef0;
+  border-radius: 999px;
+}
+
+.uploadList::-webkit-scrollbar-thumb {
+  background: #9aa9b2;
+  border: 2px solid #e8eef0;
+  border-radius: 999px;
+}
+
+.uploadList::-webkit-scrollbar-thumb:hover {
+  background: #7d8d96;
 }
 
 .uploadItem {
   display: grid;
-  gap: 4px;
-  justify-content: stretch;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 8px;
+  align-items: stretch;
   width: 100%;
-  min-height: 46px;
-  padding: 8px 10px;
+  min-height: 58px;
+  padding: 0;
   border: 1px solid var(--line);
+  border-radius: 8px;
   background: #fbfcfc;
   color: var(--ink);
-  text-align: left;
   box-shadow: 0 8px 18px rgba(16, 36, 42, 0.05);
+  overflow: hidden;
 }
 
 .uploadItem:hover,
@@ -981,11 +1142,70 @@ audio {
   color: var(--ink);
 }
 
+.uploadSelect {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 56px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  box-shadow: none;
+}
+
+.uploadSelect:hover {
+  background: transparent;
+  transform: none;
+}
+
+.uploadNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: 999px;
+  background: #e4f0f2;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.uploadCopy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.uploadDelete {
+  min-height: 100%;
+  min-width: 0;
+  padding: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  box-shadow: none;
+}
+
+.uploadDelete:hover {
+  background: #f7eae9;
+  color: var(--bad);
+  transform: none;
+}
+
 .uploadName {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 14px;
   font-weight: 900;
+  line-height: 1.25;
   min-width: 0;
 }
 
@@ -994,6 +1214,7 @@ audio {
   color: var(--muted);
   font-size: 13px;
   font-weight: 700;
+  line-height: 1.25;
 }
 
 .emptyUploads {
@@ -1010,15 +1231,14 @@ audio {
 }
 
 .sessionColumn ol {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-height: 0;
-  max-height: clamp(64px, 10vh, 110px);
+  max-height: none;
   overflow-y: auto;
   overscroll-behavior: contain;
   list-style: none;
   padding-left: 0;
   padding-right: 8px;
-  scrollbar-width: thin;
 }
 
 .panel li {
@@ -1036,12 +1256,35 @@ audio {
 
 @media (max-width: 1180px) {
   .dropzone {
-    grid-template-columns: minmax(240px, 0.32fr) auto minmax(0, 1fr);
+    grid-template-columns: var(--preview-side-column) minmax(0, 1fr);
+  }
+
+  .topAudioPreview {
+    grid-template-columns: minmax(150px, 0.7fr) minmax(160px, 0.78fr) minmax(110px, 0.5fr);
+    grid-template-rows: auto auto auto auto;
+  }
+
+  .topAudioPreview .seekControl {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .topAudioPreview .bufferControl {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  .topAudioPreview .playerButtons {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    min-height: 40px;
   }
 
   .dropControls {
-    grid-column: auto;
+    grid-column: 1 / -1;
+    grid-row: 4;
     justify-content: flex-end;
+    min-height: 40px;
   }
 
   .transport {
@@ -1065,6 +1308,11 @@ audio {
   .app,
   .transport,
   .dropzone {
+    grid-template-columns: 1fr;
+  }
+
+  .uploadControlRow {
+    grid-column: 1;
     grid-template-columns: 1fr;
   }
 
@@ -1096,6 +1344,20 @@ audio {
 
   .inlinePanel {
     max-height: 320px;
+  }
+
+  .topAudioPreview {
+    grid-template-columns: 1fr;
+  }
+
+  .topAudioPreview > label:first-child,
+  .topAudioPreview audio,
+  .topAudioPreview .seekControl,
+  .topAudioPreview .bufferControl,
+  .topAudioPreview .playerButtons,
+  .topAudioPreview .dropControls {
+    grid-column: 1;
+    grid-row: auto;
   }
 
   .sessionColumn ol {
@@ -1147,7 +1409,8 @@ audio {
     gap: 10px;
   }
 
-  .dropGroup > button,
+  .uploadControlRow > button,
+  .uploadButtons > button,
   .mixPreview button,
   .clearButton,
   .exitButton {
@@ -1193,6 +1456,7 @@ audio {
 
 /* Compact full-model workspace */
 .app {
+  --preview-side-column: minmax(220px, 0.28fr);
   gap: 8px;
   padding: 8px;
 }
@@ -1243,7 +1507,7 @@ label {
 }
 
 .dropzone {
-  grid-template-columns: minmax(220px, 0.28fr) auto minmax(0, 1fr);
+  grid-template-columns: var(--preview-side-column) minmax(0, 1fr);
   gap: 8px;
   min-height: 48px;
   margin-bottom: 8px;
@@ -1266,7 +1530,8 @@ label {
   gap: 6px;
 }
 
-.dropGroup > button,
+.uploadControlRow > button,
+.uploadButtons > button,
 button,
 .download {
   min-height: 32px;
@@ -1274,13 +1539,47 @@ button,
   font-size: 12px;
 }
 
-.dropGroup > button {
+.uploadControlRow > button,
+.uploadButtons > button {
+  height: 40px;
+  min-height: 40px;
+  min-width: 118px;
+}
+
+.topAudioPreview {
+  min-height: 56px;
+  padding: 7px 9px;
+  gap: 6px 8px;
+}
+
+.topAudioPreview .seekControl {
   min-height: 42px;
+  padding: 6px 8px;
+}
+
+.topAudioPreview .bufferControl {
+  min-height: 42px;
+  padding: 6px 8px;
+}
+
+.topAudioPreview .playerButtons button {
+  min-height: 40px;
+  height: 40px;
+  font-size: 11px;
 }
 
 .dropControls {
   justify-content: flex-end;
+}
+
+.dropControls .actionButtons {
   gap: 6px;
+  grid-template-columns: minmax(78px, 1fr) minmax(74px, 0.94fr) minmax(56px, 0.72fr);
+}
+
+.dropControls .actionButtons button {
+  min-height: 40px;
+  height: 40px;
 }
 
 .mixPreview {
@@ -1293,7 +1592,7 @@ button,
 }
 
 .transport {
-  grid-template-columns: minmax(220px, 0.28fr) minmax(0, 1fr);
+  grid-template-columns: var(--preview-side-column) minmax(0, 1fr);
   gap: 6px;
   margin-bottom: 6px;
 }
@@ -1323,7 +1622,7 @@ audio {
 }
 
 .inlinePanel {
-  max-height: clamp(118px, 18vh, 180px);
+  max-height: none;
 }
 
 .inlinePanelGrid {
@@ -1348,26 +1647,44 @@ audio {
 }
 
 .uploadList {
-  gap: 5px;
-  margin-top: 5px;
+  gap: 8px;
+  margin-top: 0;
 }
 
 .uploadItem {
-  min-height: 30px;
-  padding: 5px 7px;
+  min-height: 46px;
+}
+
+.uploadSelect {
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 9px;
+}
+
+.uploadDelete {
+  font-size: 16px;
+}
+
+.uploadNumber {
+  inline-size: 20px;
+  block-size: 20px;
+  font-size: 11px;
 }
 
 .uploadName {
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.25;
 }
 
 .uploadMeta,
 .panel li {
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 .sessionColumn ol {
-  max-height: clamp(56px, 9vh, 96px);
+  max-height: none;
 }
 
 .stems {
@@ -1444,6 +1761,12 @@ audio {
 .appFooter {
   padding-top: 5px;
   font-size: 10px;
+}
+
+@media (max-width: 1180px) and (max-height: 760px) {
+  .dropzone {
+    grid-template-columns: var(--preview-side-column) minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 880px) {

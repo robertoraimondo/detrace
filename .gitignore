@@ -2,6 +2,9 @@ workspace/
 __pycache__/
 *.pyc
 .env
+*.cer
+*.pfx
+*.p12
 build/
 dist/
 wheelhouse/

@@ -38,25 +38,14 @@ SETUP_MARKER = DATA_DIR / "setup-complete.txt"
 REQ_FILE = APP_DIR / "requirements.txt"
 WHEELHOUSE_DIR = APP_DIR / "wheelhouse"
 MVSEP_REPO_DIR = APP_DIR / "tools" / "Music-Source-Separation-Training"
-MVSEP_MODEL_DIR = APP_DIR / "models" / "mvsep_accordion"
-MVSEP_CONFIG_FILE = MVSEP_MODEL_DIR / "config.yaml"
-MVSEP_CHECKPOINT_FILE = MVSEP_MODEL_DIR / "bs_mega_53stem_accordion_mvsep.ckpt"
 TRUE_MVSEP_MODEL_DIR = APP_DIR / "models" / "mvsep_true_accordion"
 TRUE_MVSEP_CONFIG_FILE = TRUE_MVSEP_MODEL_DIR / "config.yaml"
 TRUE_MVSEP_CHECKPOINT_FILE = TRUE_MVSEP_MODEL_DIR / "checkpoint.ckpt"
 MIN_MVSEP_CONFIG_BYTES = 512
 MIN_MVSEP_CHECKPOINT_BYTES = 50 * 1024 * 1024
 MVSEP_REPO_ZIP_URL = "https://github.com/ZFTurbo/Music-Source-Separation-Training/archive/refs/heads/main.zip"
-MVSEP_CONFIG_URL = (
-    "https://huggingface.co/noblebarkrr/BS-Roformer-MVSep-Mega-53-stems/resolve/main/v1/"
-    "bs_mega_53stem_accordion_mvsep_config.yaml"
-)
-MVSEP_CHECKPOINT_URL = (
-    "https://huggingface.co/noblebarkrr/BS-Roformer-MVSep-Mega-53-stems/resolve/main/v1/"
-    "bs_mega_53stem_accordion_mvsep.ckpt"
-)
 TRUE_MVSEP_URLS_FILE = "download-urls.txt"
-REQUIRED_MODULES = ("demucs", "imageio_ffmpeg", "lameenc", "soundfile", "librosa", "webview", "torchcodec")
+REQUIRED_MODULES = ("imageio_ffmpeg", "lameenc", "soundfile", "librosa", "webview", "torchcodec")
 CUDA_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
 TORCH_MODULES = ("torch", "torchaudio")
 MVSEP_REQUIRED_MODULES = ("ml_collections", "beartype", "rotary_embedding_torch", "loralib", "matplotlib")
@@ -67,6 +56,7 @@ MVSEP_REQUIRED_PACKAGES = (
     "loralib",
     "matplotlib",
 )
+WINDOW_ICON_REFS: list[tk.PhotoImage] = []
 
 
 def cpu_worker_count() -> int:
@@ -273,11 +263,7 @@ def valid_file(path: Path, minimum_size: int) -> bool:
 
 
 def mvsep_ready() -> bool:
-    return (
-        (MVSEP_REPO_DIR / "inference.py").exists()
-        and valid_file(MVSEP_CONFIG_FILE, MIN_MVSEP_CONFIG_BYTES)
-        and valid_file(MVSEP_CHECKPOINT_FILE, MIN_MVSEP_CHECKPOINT_BYTES)
-    )
+    return (MVSEP_REPO_DIR / "inference.py").exists()
 
 
 def true_mvsep_config_ready() -> bool:
@@ -367,7 +353,7 @@ def setup_marker_ready() -> bool:
         and app_requirements_ready(runtime_python)
         and mvsep_ready()
         and mvsep_dependencies_ready(runtime_python)
-        and (not true_mvsep_download_configured() or true_mvsep_ready())
+        and true_mvsep_ready()
         and accelerator_ready(runtime_python)
     )
 
@@ -381,10 +367,9 @@ def refresh_requirement_status(ui: dict, runtime_python: Path | None = None) -> 
     ui_item(ui, "python", "Present" if find_python() else "Missing")
     ui_item(ui, "runtime", "Present" if venv_python().exists() else "Missing")
     ui_item(ui, "mvsep", "Present" if mvsep_ready() else "Missing")
-    ui_item(ui, "true_mvsep", "Present" if true_mvsep_ready() else "Optional - not installed")
+    ui_item(ui, "true_mvsep", "Present" if true_mvsep_ready() else "Missing")
 
     if runtime_python and runtime_python.exists():
-        ui_item(ui, "demucs", "Present" if check_module(runtime_python, "demucs") else "Missing")
         ui_item(ui, "ffmpeg", "Present" if check_module(runtime_python, "imageio_ffmpeg") else "Missing")
         ui_item(
             ui,
@@ -400,7 +385,6 @@ def refresh_requirement_status(ui: dict, runtime_python: Path | None = None) -> 
         else:
             ui_item(ui, "gpu", "No NVIDIA GPU detected")
     else:
-        ui_item(ui, "demucs", "Waiting for runtime")
         ui_item(ui, "ffmpeg", "Waiting for runtime")
         ui_item(ui, "codecs", "Waiting for runtime")
         ui_item(ui, "chords", "Waiting for runtime")
@@ -539,7 +523,7 @@ def ensure_runtime(ui: dict) -> Path:
     refresh_requirement_status(ui, runtime_python)
     ui_busy(ui, False)
     ui_progress(ui, 85)
-    ensure_mvsep_accordion(ui, runtime_python)
+    ensure_mvsep_support(ui, runtime_python)
     ensure_mvsep_true_accordion(ui)
     write_setup_marker()
     return runtime_python
@@ -625,21 +609,6 @@ def patch_mvsep_source_for_inference(ui: dict) -> None:
         ui_log(ui, "Patched MVSep source for inference-only WandB handling.")
 
 
-def install_mvsep_model(ui: dict) -> None:
-    if not valid_file(MVSEP_CONFIG_FILE, MIN_MVSEP_CONFIG_BYTES):
-        MVSEP_CONFIG_FILE.unlink(missing_ok=True)
-        ui_item(ui, "mvsep", "Downloading config")
-        download_file(MVSEP_CONFIG_URL, MVSEP_CONFIG_FILE, ui, "Config")
-    else:
-        ui_log(ui, f"MVSep config already exists at {MVSEP_CONFIG_FILE}")
-    if not valid_file(MVSEP_CHECKPOINT_FILE, MIN_MVSEP_CHECKPOINT_BYTES):
-        MVSEP_CHECKPOINT_FILE.unlink(missing_ok=True)
-        ui_item(ui, "mvsep", "Downloading checkpoint")
-        download_file(MVSEP_CHECKPOINT_URL, MVSEP_CHECKPOINT_FILE, ui, "Checkpoint")
-    else:
-        ui_log(ui, f"MVSep checkpoint already exists at {MVSEP_CHECKPOINT_FILE}")
-
-
 def install_true_mvsep_model(ui: dict) -> None:
     config_url, checkpoint_url = true_mvsep_download_urls()
     if (config_url and not checkpoint_url) or (checkpoint_url and not config_url):
@@ -655,7 +624,7 @@ def install_true_mvsep_model(ui: dict) -> None:
             ui_item(ui, "true_mvsep", "Downloading config")
             download_file(config_url, TRUE_MVSEP_CONFIG_FILE, ui, "True model config", "true_mvsep")
         else:
-            ui_log(ui, f"True accordion model config not installed at {TRUE_MVSEP_CONFIG_FILE}")
+            ui_log(ui, f"MVSep Mega 53-stem config not installed at {TRUE_MVSEP_CONFIG_FILE}")
 
     if not valid_file(TRUE_MVSEP_CHECKPOINT_FILE, MIN_MVSEP_CHECKPOINT_BYTES):
         TRUE_MVSEP_CHECKPOINT_FILE.unlink(missing_ok=True)
@@ -669,12 +638,12 @@ def install_true_mvsep_model(ui: dict) -> None:
                 "true_mvsep",
             )
         else:
-            ui_log(ui, f"True accordion model checkpoint not installed at {TRUE_MVSEP_CHECKPOINT_FILE}")
+            ui_log(ui, f"MVSep Mega 53-stem checkpoint not installed at {TRUE_MVSEP_CHECKPOINT_FILE}")
 
     if config_url or checkpoint_url:
         if not true_mvsep_ready():
             raise RuntimeError(
-                "True accordion model download finished, but the files are not valid. "
+                "MVSep Mega 53-stem model download finished, but the files are not valid. "
                 "Use a multi-stem config/checkpoint that outputs accordion and piano with target_instrument unset or null."
             )
 
@@ -682,42 +651,39 @@ def install_true_mvsep_model(ui: dict) -> None:
 def ensure_mvsep_true_accordion(ui: dict) -> None:
     if true_mvsep_ready():
         ui_item(ui, "true_mvsep", "Present")
-        ui_log(ui, "True accordion + piano + other model is installed.")
+        ui_log(ui, "MVSep Mega 53-stem model is installed.")
         return
 
     install_true_mvsep_model(ui)
     if true_mvsep_ready():
         ui_item(ui, "true_mvsep", "Present")
-        ui_log(ui, "Installed true accordion + piano + other model.")
+        ui_log(ui, "Installed MVSep Mega 53-stem model.")
     else:
-        ui_item(ui, "true_mvsep", "Optional - add model files")
+        ui_item(ui, "true_mvsep", "Missing model files")
         ui_log(
             ui,
-            "True accordion model is optional and was not installed. "
+            "MVSep Mega 53-stem model is required. "
             f"Place config.yaml and checkpoint.ckpt in {TRUE_MVSEP_MODEL_DIR}, or set "
             "DETRACE_MVSEP_TRUE_CONFIG_URL and DETRACE_MVSEP_TRUE_CKPT_URL before setup."
         )
 
 
-def ensure_mvsep_accordion(ui: dict, runtime_python: Path) -> None:
+def ensure_mvsep_support(ui: dict, runtime_python: Path) -> None:
     if (MVSEP_REPO_DIR / "inference.py").exists():
         patch_mvsep_source_for_inference(ui)
     if (
         (MVSEP_REPO_DIR / "inference.py").exists()
-        and valid_file(MVSEP_CONFIG_FILE, MIN_MVSEP_CONFIG_BYTES)
-        and valid_file(MVSEP_CHECKPOINT_FILE, MIN_MVSEP_CHECKPOINT_BYTES)
         and mvsep_dependencies_ready(runtime_python)
     ):
         apply_app_environment()
         ui_item(ui, "mvsep", "Present")
-        ui_log(ui, "MVSep accordion model and inference dependencies are already installed.")
+        ui_log(ui, "MVSep source and inference dependencies are already installed.")
         return
 
-    ui_status(ui, "Installing MVSep accordion model...")
+    ui_status(ui, "Installing MVSep support...")
     ui_item(ui, "mvsep", "Installing")
     ui_busy(ui, True)
     install_mvsep_repo(ui)
-    install_mvsep_model(ui)
 
     missing_modules = missing_mvsep_modules(runtime_python)
     if missing_modules:
@@ -735,7 +701,7 @@ def ensure_mvsep_accordion(ui: dict, runtime_python: Path) -> None:
 
     apply_app_environment()
     ui_item(ui, "mvsep", "Present")
-    ui_log(ui, "MVSep accordion model setup complete.")
+    ui_log(ui, "MVSep support setup complete.")
     ui_progress(ui, 92)
 
 
@@ -745,8 +711,6 @@ def app_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
     env.update(
         {
             "DETRACE_MVSEP_REPO": str(MVSEP_REPO_DIR),
-            "DETRACE_MVSEP_ACCORDION_CONFIG": str(MVSEP_CONFIG_FILE),
-            "DETRACE_MVSEP_ACCORDION_CKPT": str(MVSEP_CHECKPOINT_FILE),
             "OMP_NUM_THREADS": threads,
             "MKL_NUM_THREADS": threads,
             "NUMEXPR_NUM_THREADS": threads,
@@ -820,6 +784,7 @@ def ensure_app_files(ui: dict | None = None) -> None:
     changed = 0
     for name in ("requirements.txt", "server.py", "desktop_window.py"):
         changed += 1 if copy_file(name, ui) else 0
+    changed += copy_dir("assets", ui)
     changed += copy_dir("static", ui)
     changed += copy_dir("wheelhouse", ui)
     changed += copy_dir("models", ui)
@@ -931,8 +896,12 @@ def animate_busy(ui: dict) -> None:
 
 
 def main() -> None:
+    if fast_start_desktop_if_ready():
+        return
+
     root = tk.Tk()
     root.title("DeTrace")
+    set_window_icon(root)
     root.resizable(True, True)
     root.configure(bg="#0c181c")
     screen_width = root.winfo_screenwidth()
@@ -950,7 +919,6 @@ def main() -> None:
     items = {
         "python": tk.StringVar(value="Queued"),
         "runtime": tk.StringVar(value="Queued"),
-        "demucs": tk.StringVar(value="Queued"),
         "ffmpeg": tk.StringVar(value="Queued"),
         "codecs": tk.StringVar(value="Queued"),
         "chords": tk.StringVar(value="Queued"),
@@ -969,6 +937,7 @@ def main() -> None:
     splash_content.rowconfigure(0, weight=1)
 
     launcher_art = None
+    image_refs: list[tk.PhotoImage] = []
     logo_canvas = tk.Canvas(splash_content, bg="#10242a", borderwidth=0, highlightthickness=0)
     logo_canvas.grid(row=0, column=0, rowspan=3, sticky="nsew")
     try:
@@ -976,7 +945,7 @@ def main() -> None:
     except tk.TclError:
         launcher_art = None
     if launcher_art:
-        logo_canvas.image = launcher_art
+        image_refs.append(launcher_art)
         logo_image = logo_canvas.create_image(0, 0, image=launcher_art, anchor="center")
 
         def fit_logo_to_canvas(event: tk.Event) -> None:
@@ -1099,14 +1068,13 @@ def main() -> None:
     labels = [
         ("1. Python", "python"),
         ("2. DeTrace runtime", "runtime"),
-        ("3. Demucs separation engine", "demucs"),
-        ("4. FFmpeg codec/export support", "ffmpeg"),
-        ("5. MP3/audio codecs", "codecs"),
-        ("6. Chord detection engine", "chords"),
-        ("7. MVSep accordion model", "mvsep"),
-        ("8. True accordion multi-stem model", "true_mvsep"),
-        ("9. NVIDIA GPU acceleration", "gpu"),
-        ("10. Desktop window support", "desktop"),
+        ("3. FFmpeg codec/export support", "ffmpeg"),
+        ("4. MP3/audio codecs", "codecs"),
+        ("5. Chord detection engine", "chords"),
+        ("6. MVSep support files", "mvsep"),
+        ("7. MVSep Mega 53-stem model", "true_mvsep"),
+        ("8. NVIDIA GPU acceleration", "gpu"),
+        ("9. Desktop window support", "desktop"),
     ]
     for row, (label, key) in enumerate(labels):
         row_frame = tk.Frame(checklist, bg="#ffffff", highlightthickness=1, highlightbackground="#d6dde3")
@@ -1227,8 +1195,8 @@ def main() -> None:
             runtime_python = ensure_runtime(ui)
             ui_status(ui, "Starting DeTrace desktop app..." if mode == "desktop" else "Starting DeTrace web server...")
             ui_log(ui, f"MVSep repo: {MVSEP_REPO_DIR}")
-            ui_log(ui, f"MVSep config: {MVSEP_CONFIG_FILE}")
-            ui_log(ui, f"MVSep checkpoint: {MVSEP_CHECKPOINT_FILE}")
+            ui_log(ui, f"MVSep Mega 53 config: {TRUE_MVSEP_CONFIG_FILE}")
+            ui_log(ui, f"MVSep Mega 53 checkpoint: {TRUE_MVSEP_CHECKPOINT_FILE}")
             ui_log(ui, "Setup complete. Launching DeTrace.")
             ui_progress(ui, 100)
             if mode == "desktop":
@@ -1265,15 +1233,6 @@ def main() -> None:
     root.mainloop()
 
 
-def center_window(root: tk.Tk) -> None:
-    root.update_idletasks()
-    width = root.winfo_width()
-    height = root.winfo_height()
-    x = (root.winfo_screenwidth() - width) // 2
-    y = (root.winfo_screenheight() - height) // 2
-    root.geometry(f"{width}x{height}+{x}+{y}")
-
-
 def load_launcher_art(max_width: int | None = None, max_height: int | None = None) -> tk.PhotoImage:
     image_path = BUNDLE_DIR / "static" / "detracelogo.png"
     if not image_path.exists():
@@ -1290,6 +1249,35 @@ def load_launcher_art(max_width: int | None = None, max_height: int | None = Non
         if scale > 1:
             image = image.subsample(scale, scale)
     return image
+
+
+def set_window_icon(root: tk.Tk) -> None:
+    ico_candidates = (
+        BUNDLE_DIR / "assets" / "detrace-icon.ico",
+        INSTALL_DIR / "assets" / "detrace-icon.ico",
+    )
+    for icon_path in ico_candidates:
+        if icon_path.exists():
+            try:
+                root.iconbitmap(str(icon_path))
+                root.iconbitmap(default=str(icon_path))
+                return
+            except tk.TclError:
+                break
+
+    png_candidates = (
+        BUNDLE_DIR / "assets" / "detrace-icon.png",
+        INSTALL_DIR / "assets" / "detrace-icon.png",
+    )
+    for icon_path in png_candidates:
+        if icon_path.exists():
+            try:
+                icon = tk.PhotoImage(file=str(icon_path))
+                root.iconphoto(True, icon)
+                WINDOW_ICON_REFS.append(icon)
+            except tk.TclError:
+                pass
+            return
 
 
 if __name__ == "__main__":

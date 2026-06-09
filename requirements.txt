@@ -1,4 +1,3 @@
-demucs
 imageio-ffmpeg
 lameenc
 soundfile

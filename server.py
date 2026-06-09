@@ -4,6 +4,7 @@ import json
 import math
 import mimetypes
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
 
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
+ASSETS = ROOT / "assets"
 WORKSPACE = ROOT / "workspace"
 UPLOADS = WORKSPACE / "uploads"
 STEMS = WORKSPACE / "stems"
@@ -31,15 +33,8 @@ LOCAL_MODELS = ROOT / "models"
 HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "5180"))
 MAX_UPLOAD = 250 * 1024 * 1024
-COMBINED_ACCORDION_MODEL = "htdemucs_6s_accordion"
 TRUE_ACCORDION_MODEL = "mvsep_true_accordion"
-ALLOWED_MODELS = {"htdemucs", "htdemucs_6s", "mvsep_accordion", TRUE_ACCORDION_MODEL, COMBINED_ACCORDION_MODEL}
-DEMUCS_MODELS = {"htdemucs", "htdemucs_6s"}
-MODEL_STEMS = {
-    "htdemucs": {"vocals", "drums", "bass", "other"},
-    "htdemucs_6s": {"vocals", "drums", "bass", "guitar", "piano", "other"},
-}
-MVSEP_ACCORDION_MODEL = "mvsep_accordion"
+ALLOWED_MODELS = {TRUE_ACCORDION_MODEL}
 TRUE_ACCORDION_SOURCE_STEMS = {"accordion", "piano"}
 TRUE_ACCORDION_STEMS = {*TRUE_ACCORDION_SOURCE_STEMS, "other"}
 def configured_float(name: str, default: float) -> float:
@@ -56,7 +51,6 @@ CHORD_HOP_LENGTH = 2048
 MIN_CHORD_SECONDS = 0.18
 ACCORDION_BLEED_TARGETS = {"piano", "other"}
 ACCORDION_REDUCTION_MARKER = "_accordion_reduced_v1.txt"
-NO_ACCORDION_STEM_NAME = "no-accordion-mix.mp3"
 ACTIVE_SERVER: ThreadingHTTPServer | None = None
 ACTIVE_PROCESSES: set[subprocess.Popen[str]] = set()
 ACTIVE_PROCESSES_LOCK = threading.Lock()
@@ -102,13 +96,30 @@ def codec_status() -> bool:
     return module_available("imageio_ffmpeg") and module_available("lameenc")
 
 
-def demucs_command() -> list[str] | None:
-    if module_available("demucs"):
-        return [sys.executable, "-m", "demucs.separate"]
-    demucs_exe = shutil.which("demucs")
-    if demucs_exe:
-        return [demucs_exe]
-    return None
+def trim_leading_silence(path: Path) -> None:
+    ffmpeg = ffmpeg_executable()
+    if ffmpeg is None or not path.exists():
+        return
+    temp = path.with_name(f"{path.stem}-trimmed{path.suffix}")
+    args = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(path),
+        "-vn",
+        "-af",
+        "silenceremove=start_periods=1:start_duration=0.15:start_threshold=-50dB",
+        "-codec:a",
+        "libmp3lame",
+        "-b:a",
+        "320k",
+        str(temp),
+    ]
+    result = run_command(args)
+    if result.returncode == 0 and temp.exists() and temp.stat().st_size > 0:
+        temp.replace(path)
+        return
+    temp.unlink(missing_ok=True)
 
 
 def configured_path(env_name: str, fallback: Path) -> Path:
@@ -131,21 +142,6 @@ def mvsep_default_path(relative_path: Path) -> Path:
         return workspace_path
     installed_path = app_dir / relative_path
     return installed_path if installed_path.exists() else workspace_path
-
-
-def mvsep_settings() -> dict[str, Path]:
-    model_dir = Path("models") / "mvsep_accordion"
-    return {
-        "repo": configured_path(
-            "DETRACE_MVSEP_REPO",
-            mvsep_default_path(Path("tools") / "Music-Source-Separation-Training"),
-        ),
-        "config": configured_path("DETRACE_MVSEP_ACCORDION_CONFIG", mvsep_default_path(model_dir / "config.yaml")),
-        "checkpoint": configured_path(
-            "DETRACE_MVSEP_ACCORDION_CKPT",
-            mvsep_default_path(model_dir / "bs_mega_53stem_accordion_mvsep.ckpt"),
-        ),
-    }
 
 
 def mvsep_true_settings() -> dict[str, Path]:
@@ -175,31 +171,6 @@ def config_declares_true_accordion(config_path: Path) -> bool:
     target_lines = [line.strip() for line in text.splitlines() if line.strip().startswith("target_instrument:")]
     target_is_multi_stem = not target_lines or any(line in {"target_instrument: null", "target_instrument: none"} for line in target_lines)
     return all(stem in text for stem in TRUE_ACCORDION_SOURCE_STEMS) and target_is_multi_stem
-
-
-def mvsep_accordion_status() -> bool:
-    settings = mvsep_settings()
-    return (
-        settings["repo"].is_dir()
-        and (settings["repo"] / "inference.py").is_file()
-        and settings["config"].is_file()
-        and settings["checkpoint"].is_file()
-    )
-
-
-def mvsep_accordion_diagnostics() -> dict:
-    settings = mvsep_settings()
-    inference = settings["repo"] / "inference.py"
-    return {
-        "repo": str(settings["repo"]),
-        "repoExists": settings["repo"].is_dir(),
-        "inference": str(inference),
-        "inferenceExists": inference.is_file(),
-        "config": str(settings["config"]),
-        "configExists": settings["config"].is_file(),
-        "checkpoint": str(settings["checkpoint"]),
-        "checkpointExists": settings["checkpoint"].is_file(),
-    }
 
 
 def mvsep_true_status() -> bool:
@@ -404,8 +375,6 @@ def performance_status() -> dict:
 
 def tool_status() -> dict:
     return {
-        "demucs": demucs_command() is not None,
-        "mvsepAccordion": mvsep_accordion_status(),
         "mvsepTrueAccordion": mvsep_true_status(),
         "ffmpeg": ffmpeg_executable() is not None,
         "codecs": codec_status(),
@@ -413,7 +382,6 @@ def tool_status() -> dict:
         "cuda": torch_cuda_available(),
         "device": processing_device(),
         "cpuThreads": cpu_worker_count(),
-        "mvsepAccordionDiagnostics": mvsep_accordion_diagnostics(),
         "mvsepTrueAccordionDiagnostics": mvsep_true_diagnostics(),
         "performance": performance_status(),
     }
@@ -477,8 +445,6 @@ def shutdown(handler: BaseHTTPRequestHandler) -> None:
 def install_tools(handler: BaseHTTPRequestHandler) -> None:
     before = tool_status()
     packages = []
-    if not before["demucs"]:
-        packages.append("demucs")
     if not before["ffmpeg"]:
         packages.append("imageio-ffmpeg")
     if not before["codecs"]:
@@ -714,30 +680,6 @@ def find_stems(job_id: str) -> list[dict]:
     return stems
 
 
-def cached_stem_names(job_id: str) -> set[str]:
-    return {stem["name"].lower() for stem in find_stems(job_id)}
-
-
-def clear_incomplete_model_cache(job_id: str, model: str) -> None:
-    expected = MODEL_STEMS.get(model)
-    if expected and expected.issubset(cached_stem_names(job_id)):
-        return
-    model_dir = job_dir(job_id) / model
-    if model_dir.exists():
-        shutil.rmtree(model_dir, ignore_errors=True)
-
-
-def has_cached_model(job_id: str, model: str) -> bool:
-    expected = MODEL_STEMS.get(model)
-    if not expected:
-        return False
-    return expected.issubset(cached_stem_names(job_id))
-
-
-def has_cached_accordion(job_id: str) -> bool:
-    return "accordion" in cached_stem_names(job_id)
-
-
 def true_model_dir(job_id: str) -> Path:
     return job_dir(job_id) / TRUE_ACCORDION_MODEL
 
@@ -748,29 +690,6 @@ def has_cached_true_accordion(job_id: str) -> bool:
         return False
     names = {stem_display_name(path).lower() for path in [*model_dir.rglob("*.mp3"), *model_dir.rglob("*.wav"), *model_dir.rglob("*.flac")]}
     return bool(names) and not names.issubset(TRUE_ACCORDION_STEMS)
-
-
-def find_true_accordion_stems(job_id: str) -> list[dict]:
-    base = true_model_dir(job_id)
-    if not base.exists():
-        return []
-    files = sorted([*base.rglob("*.mp3"), *base.rglob("*.wav"), *base.rglob("*.flac")], key=stem_sort_key)
-    stems = []
-    for path in files:
-        audible, rms_db = display_stem_has_audio(job_id, path)
-        if not audible:
-            continue
-        rel = path.relative_to(WORKSPACE).as_posix()
-        stems.append(
-            {
-                "id": path.relative_to(job_dir(job_id)).as_posix(),
-                "name": stem_display_name(path),
-                "url": media_url(rel),
-                "path": str(path.relative_to(ROOT)),
-                "rmsDb": rms_db,
-            }
-        )
-    return stems
 
 
 def media_url(relative_path: str) -> str:
@@ -833,6 +752,22 @@ def clear_jobs(handler: BaseHTTPRequestHandler) -> None:
     json_response(handler, 200, {"jobs": list_jobs(), "tools": tool_status()})
 
 
+def delete_job(handler: BaseHTTPRequestHandler, job_id: str) -> None:
+    upload_path = upload_for_job(job_id)
+    if not upload_path:
+        json_response(handler, 404, {"error": "Uploaded file was not found."})
+        return
+    try:
+        upload_path.unlink(missing_ok=True)
+        stem_path = job_dir(job_id)
+    except ValueError:
+        json_response(handler, 400, {"error": "Invalid job id."})
+        return
+    if stem_path.exists():
+        shutil.rmtree(stem_path, ignore_errors=True)
+    json_response(handler, 200, {"jobs": list_jobs(), "tools": tool_status()})
+
+
 def get_job(handler: BaseHTTPRequestHandler, job_id: str) -> None:
     upload_path = upload_for_job(job_id)
     if not upload_path:
@@ -866,6 +801,8 @@ def upload(handler: BaseHTTPRequestHandler) -> None:
             out.write(chunk)
             remaining -= len(chunk)
 
+    trim_leading_silence(target)
+
     json_response(
         handler,
         200,
@@ -883,85 +820,16 @@ def upload(handler: BaseHTTPRequestHandler) -> None:
 def separate(handler: BaseHTTPRequestHandler) -> None:
     payload = read_json(handler)
     job_id = payload.get("jobId", "")
-    model = payload.get("model", COMBINED_ACCORDION_MODEL)
+    model = payload.get("model", TRUE_ACCORDION_MODEL)
     if model not in ALLOWED_MODELS:
-        json_response(handler, 400, {"error": "Unsupported separation model."})
+        json_response(handler, 400, {"error": "Unsupported separation model. DeTrace now uses only MVSep Mega 53 stems."})
         return
     upload_match = next(UPLOADS.glob(f"{job_id}-*.mp3"), None)
     if not upload_match:
         json_response(handler, 404, {"error": "Uploaded file was not found."})
         return
 
-    if model == MVSEP_ACCORDION_MODEL:
-        separate_mvsep_accordion(handler, job_id, upload_match)
-        return
-
-    if model == TRUE_ACCORDION_MODEL:
-        separate_true_accordion(handler, job_id, upload_match)
-        return
-
-    if model == COMBINED_ACCORDION_MODEL:
-        separate_combined_accordion(handler, job_id, upload_match)
-        return
-
-    tools = tool_status()
-    if model in DEMUCS_MODELS and not tools["demucs"]:
-        json_response(
-            handler,
-            424,
-            {
-                "error": "Demucs is not installed. Use Install Tools, then analyze again.",
-                "tools": tools,
-            },
-        )
-        return
-    out_dir = job_dir(job_id)
-    if has_cached_model(job_id, model):
-        json_response(handler, 200, {"jobId": job_id, "stems": find_stems(job_id), "tools": tools, "cached": True})
-        return
-    clear_incomplete_model_cache(job_id, model)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    result = run_demucs(model, upload_match, out_dir)
-    stems = find_stems(job_id)
-    if result.returncode != 0 or not stems:
-        details = result.stderr or result.stdout
-        if "torchcodec" in details.lower():
-            message = "TorchCodec is required for your installed torchaudio version. Run `python -m pip install torchcodec`, then restart the server."
-        else:
-            message = "Stem separation failed."
-        json_response(
-            handler,
-            500,
-            {
-                "error": message,
-                "details": details[-4000:],
-                "tools": tools,
-            },
-        )
-        return
-
-    json_response(handler, 200, {"jobId": job_id, "stems": stems, "tools": tools})
-
-
-def run_demucs(model: str, upload_match: Path, out_dir: Path) -> subprocess.CompletedProcess[str]:
-    demucs = demucs_command()
-    if demucs is None:
-        return subprocess.CompletedProcess(["demucs"], 1, "", "Demucs is not installed.")
-    cmd = [
-        *demucs,
-        "-n",
-        model,
-        "-d",
-        processing_device(),
-        "--mp3",
-        "--mp3-bitrate",
-        "320",
-        "--out",
-        str(out_dir),
-        str(upload_match),
-    ]
-    return run_command(cmd)
+    separate_true_accordion(handler, job_id, upload_match)
 
 
 def mvsep_command(input_dir: Path, store_dir: Path, settings: dict[str, Path] | None = None) -> list[str]:
@@ -997,35 +865,67 @@ def run_mvsep_model(upload_match: Path, store_dir: Path, settings: dict[str, Pat
         shutil.rmtree(input_dir, ignore_errors=True)
 
 
-def run_mvsep_accordion(upload_match: Path, store_dir: Path) -> subprocess.CompletedProcess[str]:
-    return run_mvsep_model(upload_match, store_dir, mvsep_settings())
-
-
 def run_mvsep_true_accordion(upload_match: Path, store_dir: Path) -> subprocess.CompletedProcess[str]:
     return run_mvsep_model(upload_match, store_dir, mvsep_true_settings())
 
 
-def accordion_outputs(base: Path) -> list[Path]:
-    files = sorted([*base.rglob("*.mp3"), *base.rglob("*.wav"), *base.rglob("*.flac")], key=stem_sort_key)
-    return [path for path in files if "accordion" in path.stem.lower()]
+def audio_duration_seconds(path: Path) -> float | None:
+    ffmpeg = ffmpeg_executable()
+    if ffmpeg is None or not path.exists():
+        return None
+    try:
+        result = subprocess.run(
+            [ffmpeg, "-hide_banner", "-i", str(path)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=8,
+        )
+    except Exception:
+        return None
+    match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", result.stderr or result.stdout)
+    if not match:
+        return None
+    hours, minutes, seconds = match.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
 
 
-def copy_accordion_stem(source_dir: Path, out_dir: Path) -> bool:
-    matches = accordion_outputs(source_dir)
-    if not matches:
-        audio_files = sorted([*source_dir.rglob("*.mp3"), *source_dir.rglob("*.wav"), *source_dir.rglob("*.flac")])
-        matches = audio_files if len(audio_files) == 1 else []
-    if not matches:
+def normalize_stem_to_reference(source: Path, target: Path, reference: Path) -> bool:
+    ffmpeg = ffmpeg_executable()
+    duration = audio_duration_seconds(reference)
+    if ffmpeg is None or duration is None or duration <= 0:
         return False
 
-    source = matches[0]
-    target = out_dir / f"accordion{source.suffix.lower()}"
-    if source.resolve() != target.resolve():
-        shutil.copy2(source, target)
+    temp = target.with_name(f"{target.stem}.timeline{target.suffix}")
+    filtergraph = (
+        "[0:a]aresample=44100:async=1:first_pts=0,"
+        "asetpts=PTS-STARTPTS,"
+        f"apad,atrim=0:{duration:.3f}[aout]"
+    )
+    args = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(source),
+        "-filter_complex",
+        filtergraph,
+        "-map",
+        "[aout]",
+        "-codec:a",
+        "libmp3lame",
+        "-b:a",
+        "320k",
+        str(temp),
+    ]
+    result = run_command(args)
+    if result.returncode != 0 or not temp.exists() or temp.stat().st_size <= 0:
+        temp.unlink(missing_ok=True)
+        return False
+    temp.replace(target)
     return True
 
 
-def copy_true_accordion_stems(source_dir: Path, out_dir: Path) -> set[str]:
+def copy_true_accordion_stems(source_dir: Path, out_dir: Path, upload_match: Path | None = None) -> set[str]:
     copied: set[str] = set()
     files = sorted([*source_dir.rglob("*.mp3"), *source_dir.rglob("*.wav"), *source_dir.rglob("*.flac")], key=stem_sort_key)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1034,7 +934,11 @@ def copy_true_accordion_stems(source_dir: Path, out_dir: Path) -> set[str]:
         if not true_model_stem_has_audio(source):
             continue
         target = out_dir / f"{safe_stem_filename(label)}{source.suffix.lower()}"
-        if source.resolve() != target.resolve():
+        if upload_match is not None:
+            target = target.with_suffix(".mp3")
+            if not normalize_stem_to_reference(source, target, upload_match) and source.resolve() != target.resolve():
+                shutil.copy2(source, target)
+        elif source.resolve() != target.resolve():
             shutil.copy2(source, target)
         copied.add(label)
     return copied
@@ -1108,16 +1012,6 @@ def accordion_reduction_amount() -> float:
     return 0.62
 
 
-def no_accordion_reduction_amount() -> float:
-    configured = os.environ.get("DETRACE_NO_ACCORDION_REDUCTION", "").strip()
-    if configured:
-        try:
-            return max(0.0, min(1.25, float(configured)))
-        except ValueError:
-            pass
-    return 1.0
-
-
 def audio_codec_args(path: Path) -> list[str]:
     suffix = path.suffix.lower()
     if suffix == ".mp3":
@@ -1143,67 +1037,20 @@ def accordion_stem_path(job_id: str) -> Path | None:
     return None
 
 
-def create_no_accordion_mix(
-    job_id: str,
-    upload_match: Path,
-    reduction: float | None = None,
-    force: bool = False,
-    aggressive: bool = False,
-) -> bool:
-    base = job_dir(job_id)
-    target = base / NO_ACCORDION_STEM_NAME
-    if target.exists() and not force:
-        return True
-
-    ffmpeg = ffmpeg_executable()
+def normalize_existing_accordion_stem(job_id: str, upload_match: Path) -> bool:
     accordion = accordion_stem_path(job_id)
-    if ffmpeg is None or accordion is None or not accordion.exists() or not upload_match.exists():
+    if accordion is None or not accordion.exists():
         return False
-
-    temp = target.with_name(f"{target.stem}.tmp{target.suffix}")
-    default_amount = 1.18 if aggressive else no_accordion_reduction_amount()
-    amount = default_amount if reduction is None else max(0.0, min(1.25, reduction))
-    accordion_filter = f"[1:a]volume=-{amount}[accordion]"
-    output_filter = "alimiter=limit=0.95"
-    if aggressive:
-        accordion_filter = f"[1:a]highpass=f=80,lowpass=f=9500,volume=-{amount}[accordion]"
-        output_filter = (
-            "equalizer=f=320:t=q:w=1.15:g=-1.5,"
-            "equalizer=f=640:t=q:w=1.05:g=-2.5,"
-            "equalizer=f=1250:t=q:w=1.05:g=-2.0,"
-            "equalizer=f=2500:t=q:w=1.10:g=-1.4,"
-            "alimiter=limit=0.95"
-        )
-    filtergraph = (
-        f"{accordion_filter};"
-        "[0:a][accordion]amix=inputs=2:duration=first:dropout_transition=0,"
-        f"{output_filter}[aout]"
-    )
-    args = [
-        ffmpeg,
-        "-y",
-        "-i",
-        str(upload_match),
-        "-i",
-        str(accordion),
-        "-filter_complex",
-        filtergraph,
-        "-map",
-        "[aout]",
-        *audio_codec_args(target),
-        str(temp),
-    ]
-    result = run_command(args)
-    if result.returncode != 0 or not temp.exists():
-        temp.unlink(missing_ok=True)
-        return False
-    temp.replace(target)
-    return True
+    target = accordion.with_suffix(".mp3")
+    normalized = normalize_stem_to_reference(accordion, target, upload_match)
+    if normalized and target != accordion:
+        accordion.unlink(missing_ok=True)
+    return normalized
 
 
 def finalize_accordion_outputs(job_id: str, upload_match: Path) -> None:
+    normalize_existing_accordion_stem(job_id, upload_match)
     reduce_accordion_bleed(job_id)
-    create_no_accordion_mix(job_id, upload_match, aggressive=True)
 
 
 def reduce_accordion_bleed(job_id: str) -> None:
@@ -1264,116 +1111,6 @@ def reduce_accordion_bleed(job_id: str) -> None:
     marker.write_text("\n".join(processed), encoding="utf-8")
 
 
-def separate_combined_accordion(handler: BaseHTTPRequestHandler, job_id: str, upload_match: Path) -> None:
-    tools = tool_status()
-    missing = []
-    if not tools["demucs"]:
-        missing.append("Demucs")
-    if not tools["mvsepAccordion"]:
-        missing.append("MVSep accordion")
-    if missing:
-        json_response(
-            handler,
-            424,
-            {
-                "error": f"{', '.join(missing)} required for 6-stem plus accordion separation.",
-                "tools": tools,
-            },
-        )
-        return
-
-    out_dir = job_dir(job_id)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    if not has_cached_model(job_id, "htdemucs_6s"):
-        clear_incomplete_model_cache(job_id, "htdemucs_6s")
-        demucs_result = run_demucs("htdemucs_6s", upload_match, out_dir)
-        if demucs_result.returncode != 0:
-            details = demucs_result.stderr or demucs_result.stdout
-            json_response(
-                handler,
-                500,
-                {
-                    "error": "6-stem separation failed.",
-                    "details": details[-4000:],
-                    "tools": tools,
-                },
-            )
-            return
-
-    if has_cached_accordion(job_id):
-        finalize_accordion_outputs(job_id, upload_match)
-        json_response(handler, 200, {"jobId": job_id, "stems": find_stems(job_id), "tools": tool_status(), "cached": True})
-        return
-
-    mvsep_dir = out_dir / "_mvsep_accordion"
-    mvsep_dir.mkdir(parents=True, exist_ok=True)
-    mvsep_result = run_mvsep_accordion(upload_match, mvsep_dir)
-    copied = copy_accordion_stem(mvsep_dir, out_dir)
-    shutil.rmtree(mvsep_dir, ignore_errors=True)
-
-    stems = find_stems(job_id)
-    if mvsep_result.returncode != 0 or not copied or not stems:
-        json_response(
-            handler,
-            500,
-            {
-                "error": "Accordion separation failed after the 6-stem pass.",
-                "details": (mvsep_result.stderr or mvsep_result.stdout)[-4000:],
-                "tools": tools,
-            },
-        )
-        return
-
-    finalize_accordion_outputs(job_id, upload_match)
-    json_response(handler, 200, {"jobId": job_id, "stems": find_stems(job_id), "tools": tool_status()})
-
-
-def separate_mvsep_accordion(handler: BaseHTTPRequestHandler, job_id: str, upload_match: Path) -> None:
-    tools = tool_status()
-    if not tools["mvsepAccordion"]:
-        settings = mvsep_settings()
-        json_response(
-            handler,
-            424,
-            {
-                "error": "MVSep accordion model is not configured.",
-                "details": (
-                    "Set DETRACE_MVSEP_REPO to a local Music-Source-Separation-Training checkout, "
-                    "DETRACE_MVSEP_ACCORDION_CONFIG to the accordion config YAML, and "
-                    "DETRACE_MVSEP_ACCORDION_CKPT to the accordion checkpoint. "
-                    f"Current paths: repo={settings['repo']}; config={settings['config']}; checkpoint={settings['checkpoint']}"
-                ),
-                "tools": tools,
-            },
-        )
-        return
-
-    out_dir = job_dir(job_id)
-    if has_cached_accordion(job_id):
-        finalize_accordion_outputs(job_id, upload_match)
-        json_response(handler, 200, {"jobId": job_id, "stems": find_stems(job_id), "tools": tools, "cached": True})
-        return
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    result = run_mvsep_accordion(upload_match, out_dir)
-    stems = find_stems(job_id)
-    if result.returncode != 0 or not stems:
-        json_response(
-            handler,
-            500,
-            {
-                "error": "Accordion separation failed.",
-                "details": (result.stderr or result.stdout)[-4000:],
-                "tools": tools,
-            },
-        )
-        return
-
-    finalize_accordion_outputs(job_id, upload_match)
-    json_response(handler, 200, {"jobId": job_id, "stems": find_stems(job_id), "tools": tool_status()})
-
-
 def separate_true_accordion(handler: BaseHTTPRequestHandler, job_id: str, upload_match: Path) -> None:
     tools = tool_status()
     settings = mvsep_true_settings()
@@ -1398,7 +1135,8 @@ def separate_true_accordion(handler: BaseHTTPRequestHandler, job_id: str, upload
     out_dir = job_dir(job_id)
     model_dir = true_model_dir(job_id)
     if has_cached_true_accordion(job_id):
-        json_response(handler, 200, {"jobId": job_id, "stems": find_true_accordion_stems(job_id), "tools": tools, "cached": True})
+        finalize_accordion_outputs(job_id, upload_match)
+        json_response(handler, 200, {"jobId": job_id, "stems": find_stems(job_id), "tools": tools, "cached": True})
         return
 
     if model_dir.exists():
@@ -1410,7 +1148,7 @@ def separate_true_accordion(handler: BaseHTTPRequestHandler, job_id: str, upload
     scratch_dir.mkdir(parents=True, exist_ok=True)
 
     result = run_mvsep_true_accordion(upload_match, scratch_dir)
-    copied = copy_true_accordion_stems(scratch_dir, model_dir)
+    copied = copy_true_accordion_stems(scratch_dir, model_dir, upload_match)
     shutil.rmtree(scratch_dir, ignore_errors=True)
     if result.returncode != 0 or not copied:
         json_response(
@@ -1425,102 +1163,8 @@ def separate_true_accordion(handler: BaseHTTPRequestHandler, job_id: str, upload
         )
         return
 
-    json_response(handler, 200, {"jobId": job_id, "stems": find_true_accordion_stems(job_id), "tools": tool_status()})
-
-
-def append_accordion(handler: BaseHTTPRequestHandler) -> None:
-    payload = read_json(handler)
-    job_id = payload.get("jobId", "")
-    upload_match = next(UPLOADS.glob(f"{job_id}-*.mp3"), None)
-    if not upload_match:
-        json_response(handler, 404, {"error": "Uploaded file was not found."})
-        return
-
-    tools = tool_status()
-    if not tools["mvsepAccordion"]:
-        json_response(
-            handler,
-            424,
-            {
-                "error": "MVSep accordion model is not configured.",
-                "tools": tools,
-            },
-        )
-        return
-
-    out_dir = job_dir(job_id)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    if has_cached_accordion(job_id):
-        finalize_accordion_outputs(job_id, upload_match)
-        json_response(handler, 200, {"jobId": job_id, "stems": find_stems(job_id), "tools": tools, "cached": True})
-        return
-    mvsep_dir = out_dir / "_mvsep_accordion"
-    if mvsep_dir.exists():
-        shutil.rmtree(mvsep_dir)
-    mvsep_dir.mkdir(parents=True, exist_ok=True)
-
-    result = run_mvsep_accordion(upload_match, mvsep_dir)
-    copied = copy_accordion_stem(mvsep_dir, out_dir)
-    shutil.rmtree(mvsep_dir, ignore_errors=True)
-
-    stems = find_stems(job_id)
-    if result.returncode != 0 or not copied:
-        json_response(
-            handler,
-            500,
-            {
-                "error": "Accordion separation failed.",
-                "details": (result.stderr or result.stdout)[-4000:],
-                "tools": tools,
-                "stems": stems,
-            },
-        )
-        return
-
     finalize_accordion_outputs(job_id, upload_match)
     json_response(handler, 200, {"jobId": job_id, "stems": find_stems(job_id), "tools": tool_status()})
-
-
-def regenerate_no_accordion(handler: BaseHTTPRequestHandler) -> None:
-    payload = read_json(handler)
-    job_id = payload.get("jobId", "")
-    upload_match = next(UPLOADS.glob(f"{job_id}-*.mp3"), None)
-    if not upload_match:
-        json_response(handler, 404, {"error": "Uploaded file was not found."})
-        return
-
-    aggressive = bool(payload.get("aggressive", False))
-    reduction = None
-    if "reduction" in payload:
-        try:
-            reduction = max(0.0, min(1.25, float(payload["reduction"])))
-        except (TypeError, ValueError):
-            json_response(handler, 400, {"error": "Accordion removal strength must be a number."})
-            return
-
-    tools = tool_status()
-    if not tools["ffmpeg"]:
-        json_response(handler, 424, {"error": "FFmpeg is required to rebuild the No Accordion Mix.", "tools": tools})
-        return
-    if accordion_stem_path(job_id) is None:
-        json_response(handler, 424, {"error": "Accordion stem must be created before rebuilding the No Accordion Mix.", "tools": tools})
-        return
-
-    ok = create_no_accordion_mix(job_id, upload_match, reduction=reduction, force=True, aggressive=aggressive)
-    if not ok:
-        json_response(handler, 500, {"error": "No Accordion Mix could not be rebuilt.", "tools": tools})
-        return
-    json_response(
-        handler,
-        200,
-        {
-            "jobId": job_id,
-            "aggressive": aggressive,
-            "reduction": reduction if reduction is not None else (1.18 if aggressive else no_accordion_reduction_amount()),
-            "stems": find_stems(job_id),
-            "tools": tool_status(),
-        },
-    )
 
 
 def chord_templates() -> dict[str, list[float]]:
@@ -1747,6 +1391,9 @@ class AppHandler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/media/"):
             self.serve_file(WORKSPACE / unquote(parsed.path.removeprefix("/media/")))
             return
+        if parsed.path.startswith("/assets/"):
+            self.serve_file(ASSETS / unquote(parsed.path.removeprefix("/assets/")))
+            return
         path = STATIC / "index.html" if parsed.path == "/" else STATIC / parsed.path.lstrip("/")
         self.serve_file(path)
 
@@ -1754,6 +1401,9 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path.startswith("/media/"):
             self.serve_file(WORKSPACE / unquote(parsed.path.removeprefix("/media/")), body=False)
+            return
+        if parsed.path.startswith("/assets/"):
+            self.serve_file(ASSETS / unquote(parsed.path.removeprefix("/assets/")), body=False)
             return
         path = STATIC / "index.html" if parsed.path == "/" else STATIC / parsed.path.lstrip("/")
         self.serve_file(path, body=False)
@@ -1765,12 +1415,6 @@ class AppHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/separate":
             separate(self)
-            return
-        if parsed.path == "/api/accordion":
-            append_accordion(self)
-            return
-        if parsed.path == "/api/no-accordion":
-            regenerate_no_accordion(self)
             return
         if parsed.path == "/api/export":
             export_mix(self)
@@ -1791,12 +1435,15 @@ class AppHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/jobs":
             clear_jobs(self)
             return
+        if parsed.path.startswith("/api/jobs/"):
+            delete_job(self, parsed.path.removeprefix("/api/jobs/"))
+            return
         json_response(self, 404, {"error": "Unknown endpoint."})
 
     def serve_file(self, path: Path, body: bool = True) -> None:
         try:
             resolved = path.resolve()
-            allowed = (STATIC.resolve(), WORKSPACE.resolve())
+            allowed = (STATIC.resolve(), ASSETS.resolve(), WORKSPACE.resolve())
             if not any(resolved == base or base in resolved.parents for base in allowed):
                 raise FileNotFoundError
             if not resolved.exists() or not resolved.is_file():
@@ -1817,7 +1464,7 @@ class AppHandler(BaseHTTPRequestHandler):
             content_length = end - start + 1
             self.send_response(206)
             self.send_header("Content-Type", mime)
-            if resolved == STATIC.resolve() or STATIC.resolve() in resolved.parents:
+            if resolved == STATIC.resolve() or STATIC.resolve() in resolved.parents or resolved == ASSETS.resolve() or ASSETS.resolve() in resolved.parents:
                 self.send_header("Cache-Control", "no-store")
             self.send_header("Accept-Ranges", "bytes")
             self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
@@ -1832,7 +1479,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
         self.send_response(200)
         self.send_header("Content-Type", mime)
-        if resolved == STATIC.resolve() or STATIC.resolve() in resolved.parents:
+        if resolved == STATIC.resolve() or STATIC.resolve() in resolved.parents or resolved == ASSETS.resolve() or ASSETS.resolve() in resolved.parents:
             self.send_header("Cache-Control", "no-store")
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(file_size))

@@ -13,20 +13,27 @@ const state = {
   jobs: [],
   tools: {},
   playToken: 0,
+  jobSelectToken: 0,
+  mixRestartToken: 0,
+  mixSessionToken: 0,
+  sourceResumeReady: false,
   analysisRunning: false,
   sessionStep: 0,
   sessionProcesses: [],
   masterVolume: Number(localStorage.getItem("detrace-master-volume") || 1),
   bassLevel: Number(localStorage.getItem("detrace-bass-level") || 0),
   trebleLevel: Number(localStorage.getItem("detrace-treble-level") || 0),
+  toneUpdateFrame: 0,
+  bufferProgressFrame: 0,
   seeking: false,
-  loopEnabled: localStorage.getItem("detrace-loop-enabled") === "1",
 };
 
 const els = {
   dropzone: document.querySelector("#dropzone"),
   fileInput: document.querySelector("#fileInput"),
+  folderInput: document.querySelector("#folderInput"),
   chooseBtn: document.querySelector("#chooseBtn"),
+  chooseFolderBtn: document.querySelector("#chooseFolderBtn"),
   exitBtn: document.querySelector("#exitBtn"),
   sourcePlayer: document.querySelector("#sourcePlayer"),
   splash: document.querySelector("#splash"),
@@ -36,8 +43,6 @@ const els = {
   playMixBtn: document.querySelector("#playMixBtn"),
   pauseBtn: document.querySelector("#pauseBtn"),
   stopMixBtn: document.querySelector("#stopMixBtn"),
-  rewindBtn: document.querySelector("#rewindBtn"),
-  loopBtn: document.querySelector("#loopBtn"),
   stems: document.querySelector("#stems"),
   uploadList: document.querySelector("#uploadList"),
   spectrumCanvas: document.querySelector("#spectrumCanvas"),
@@ -50,6 +55,8 @@ const els = {
   seekControl: document.querySelector("#seekControl"),
   seekCurrent: document.querySelector("#seekCurrent"),
   seekDuration: document.querySelector("#seekDuration"),
+  bufferFill: document.querySelector("#bufferFill"),
+  bufferPercent: document.querySelector("#bufferPercent"),
   bassControl: document.querySelector("#bassControl"),
   bassValue: document.querySelector("#bassValue"),
   bassLed: document.querySelector("#bassLed"),
@@ -118,8 +125,12 @@ const translations = {
     toolInstallComplete: "Tool installation complete: {installed}.",
     clearConfirm: "Clear all uploaded MP3s and analyzed tracks?",
     couldNotClearUploads: "Could not clear uploads.",
+    couldNotDeleteUpload: "Could not delete uploaded file.",
     uploadsCleared: "Uploaded MP3 list cleared.",
+    uploadDeleted: "Deleted {filename}.",
     emptyUploads: "No uploaded files yet.",
+    deleteUpload: "Delete {filename}",
+    deleteUploadConfirm: "Delete {filename} from uploads?",
     tracksFound: "{count} tracks found",
     notAnalyzed: "Not analyzed",
     couldNotLoadUploads: "Could not load uploads.",
@@ -552,8 +563,7 @@ const translations = {
 };
 
 const toolLabels = {
-  demucs: "Demucs",
-  mvsepAccordion: "MVSep Accordion",
+  mvsepTrueAccordion: "MVSep Mega 53",
   ffmpeg: "FFmpeg",
   codecs: "Codecs",
   chords: "Chords",
@@ -684,12 +694,15 @@ function setAudioSource(audio, src, label = "") {
   const source = mediaSource(src);
   const version = String((Number(audio.dataset.sourceVersion) || 0) + 1);
   audio.pause();
+  if (audio === els.sourcePlayer) state.sourceResumeReady = false;
   prepareAudioOutput(audio);
   audio.dataset.sourceVersion = version;
   audio.dataset.track = label;
   audio.loop = false;
+  audio.preload = "auto";
   audio.src = source;
   audio.load();
+  updateBufferProgress();
   updatePauseButton();
   audio.addEventListener("play", () => {
     if (audio.dataset.sourceVersion !== version || !audio.currentSrc) return;
@@ -700,7 +713,10 @@ function setAudioSource(audio, src, label = "") {
     if (audio.dataset.sourceVersion !== version || !source) return;
     log(t("audioLoadFailed", { track: audioLabel(audio) }), "error");
   }, { once: true });
-  audio.addEventListener("loadedmetadata", updateSeekControl, { once: true });
+  audio.addEventListener("loadedmetadata", () => {
+    updateSeekControl();
+    updateBufferProgress();
+  }, { once: true });
   updateSeekControl();
 }
 
@@ -750,7 +766,7 @@ function elapsedSeconds(startedAt) {
 }
 
 function showSessionSongTitle(filename) {
-  console.log(filename || state.filename || "");
+  console.log(cleanSongName(filename || state.filename || ""));
 }
 
 function updateSelectedSummary() {
@@ -758,8 +774,28 @@ function updateSelectedSummary() {
   els.selectedSummary.textContent = selected.length ? selected.join(", ") : t("noSelection");
 }
 
+function cleanSongName(filename = "") {
+  const withoutPath = String(filename).split(/[\\/]/).pop() || "";
+  const withoutExtension = withoutPath.replace(/\.[^.]+$/, "");
+  const cleaned = withoutExtension
+    .replace(/[_@#]+/g, " ")
+    .replace(/\s*[-–—]\s*/g, " - ")
+    .replace(/\baudio\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .replace(/(?:^|\s)-(?=\s|$)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || "Song";
+}
+
+function isMp3File(file) {
+  const name = String(file?.name || "").toLowerCase();
+  return Boolean(file && (file.type === "audio/mpeg" || name.endsWith(".mp3")));
+}
+
 function stopAllAudio() {
   stopMix();
+  state.sourceResumeReady = false;
   for (const audio of [els.sourcePlayer, ...state.players.map(({ audio }) => audio)]) {
     audio.pause();
     audio.currentTime = 0;
@@ -770,6 +806,7 @@ function stopAllAudio() {
 function unloadAudio(audio) {
   if (!audio) return;
   audio.pause();
+  if (audio === els.sourcePlayer) state.sourceResumeReady = false;
   audio.removeAttribute("src");
   audio.load();
 }
@@ -787,6 +824,7 @@ function disableAppControls() {
     button.disabled = true;
   }
   els.fileInput.disabled = true;
+  if (els.folderInput) els.folderInput.disabled = true;
   els.modelSelect.disabled = true;
   els.languageSelect.disabled = true;
 }
@@ -815,6 +853,7 @@ async function exitApplication() {
     els.exitBtn.disabled = false;
     els.exitBtn.classList.remove("working");
     els.fileInput.disabled = false;
+    if (els.folderInput) els.folderInput.disabled = false;
     els.modelSelect.disabled = false;
     els.languageSelect.disabled = false;
     log(error.message || t("exitFailed"), "error");
@@ -881,13 +920,7 @@ function startStatusPolling() {
 }
 
 function toolsReady(tools = {}, model = els.modelSelect?.value || "mvsep_true_accordion") {
-  const separationReady = model === "htdemucs_6s_accordion"
-    ? tools.demucs && tools.mvsepAccordion
-    : model === "mvsep_true_accordion"
-      ? tools.mvsepTrueAccordion
-    : model === "mvsep_accordion"
-      ? tools.mvsepAccordion
-      : tools.demucs;
+  const separationReady = model === "mvsep_true_accordion" && tools.mvsepTrueAccordion;
   return Boolean(separationReady && tools.ffmpeg && tools.codecs && tools.chords);
 }
 
@@ -899,13 +932,7 @@ async function ensureToolsReady() {
     log(t("requirementsReady"), "success");
     return true;
   }
-  const required = model === "htdemucs_6s_accordion"
-    ? ["demucs", "mvsepAccordion", "ffmpeg", "codecs", "chords"]
-    : model === "mvsep_true_accordion"
-    ? ["mvsepTrueAccordion", "ffmpeg", "codecs", "chords"]
-    : model === "mvsep_accordion"
-    ? ["mvsepAccordion", "ffmpeg", "codecs", "chords"]
-    : ["demucs", "ffmpeg", "codecs", "chords"];
+  const required = ["mvsepTrueAccordion", "ffmpeg", "codecs", "chords"];
   const missing = required
     .filter((key) => !tools[key])
     .map((key) => toolLabels[key] || key)
@@ -968,37 +995,107 @@ function renderJobs() {
     return;
   }
 
-  for (const job of state.jobs) {
+  const jobsByUploadOrder = [...state.jobs].reverse();
+  jobsByUploadOrder.forEach((job, index) => {
+    const item = document.createElement("div");
+    item.className = "uploadItem";
+    item.dataset.jobId = job.jobId;
+    item.classList.toggle("active", job.jobId === state.jobId);
+
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "uploadItem";
+    button.className = "uploadSelect";
     button.dataset.jobId = job.jobId;
-    button.classList.toggle("active", job.jobId === state.jobId);
+
+    const number = document.createElement("span");
+    number.className = "uploadNumber";
+    number.textContent = String(index + 1);
+
+    const copy = document.createElement("span");
+    copy.className = "uploadCopy";
 
     const title = document.createElement("span");
     title.className = "uploadName";
-    title.textContent = job.filename;
+    title.textContent = cleanSongName(job.filename);
+    title.title = job.filename || cleanSongName(job.filename);
 
     const meta = document.createElement("span");
     meta.className = "uploadMeta";
     meta.textContent = job.analyzed ? t("tracksFound", { count: job.stems.length }) : t("notAnalyzed");
 
-    button.append(title, meta);
-    els.uploadList.append(button);
-  }
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "uploadDelete";
+    deleteButton.dataset.jobId = job.jobId;
+    deleteButton.setAttribute("aria-label", t("deleteUpload", { filename: cleanSongName(job.filename) }));
+    deleteButton.title = t("deleteUpload", { filename: cleanSongName(job.filename) });
+    deleteButton.textContent = "\u{1F5D1}";
+
+    copy.append(title, meta);
+    button.append(number, copy);
+    item.append(button, deleteButton);
+    els.uploadList.append(item);
+  });
 }
 
 function selectUploadFromList(event) {
-  const button = event.target.closest(".uploadItem");
+  const deleteButton = event.target.closest(".uploadDelete");
+  if (deleteButton) {
+    event.preventDefault();
+    const job = state.jobs.find((item) => item.jobId === deleteButton.dataset.jobId);
+    if (job) deleteUpload(job).catch((error) => log(error.message, "error"));
+    return;
+  }
+
+  const button = event.target.closest(".uploadSelect");
   if (!button) return;
   const job = state.jobs.find((item) => item.jobId === button.dataset.jobId);
   if (!job) return;
   event.preventDefault();
-  selectJob(job).catch((error) => log(error.message, "error"));
+  selectJob(job, { autoAnalyze: true }).catch((error) => log(error.message, "error"));
+}
+
+function clearCurrentJobView() {
+  stopMix();
+  releaseLoadedAudio();
+  state.jobId = "";
+  state.file = null;
+  state.filename = "";
+  state.sourceUrl = "";
+  state.stems = [];
+  state.chords = [];
+  state.activeChordIndex = -1;
+  state.players = [];
+  setAudioSource(els.sourcePlayer, "", t("original"));
+  els.stems.innerHTML = "";
+  els.separateBtn.disabled = true;
+  els.exportBtn.disabled = true;
+  els.playMixBtn.disabled = true;
+  els.stopMixBtn.disabled = true;
+  updateSeekControl();
+  renderChords();
+  updateSelectedSummary();
+}
+
+async function deleteUpload(job) {
+  const confirmed = window.confirm(t("deleteUploadConfirm", { filename: cleanSongName(job.filename) }));
+  if (!confirmed) return;
+
+  if (job.jobId === state.jobId) {
+    clearCurrentJobView();
+  }
+
+  const response = await fetch(`/api/jobs/${job.jobId}`, { method: "DELETE" });
+  const data = await readJsonResponse(response, t("couldNotDeleteUpload"));
+  if (!response.ok) throw new Error(data.error || t("couldNotDeleteUpload"));
+  state.jobs = data.jobs || [];
+  updateTools(data.tools);
+  renderJobs();
+  log(t("uploadDeleted", { filename: cleanSongName(job.filename) }), "success");
 }
 
 function loadJobIntoView(job) {
-  stopMix();
+  releaseLoadedAudio();
   state.jobId = job.jobId;
   state.filename = job.filename;
   state.sourceUrl = job.sourceUrl;
@@ -1015,19 +1112,49 @@ function loadJobIntoView(job) {
   renderJobs();
 }
 
-async function selectJob(job) {
+async function selectJob(job, options = {}) {
+  const selectToken = ++state.jobSelectToken;
+  const previousJobId = state.jobId;
   try {
+    els.uploadList.setAttribute("aria-busy", "true");
+    if (job.jobId !== previousJobId) {
+      releaseLoadedAudio();
+      state.jobId = job.jobId;
+      state.filename = job.filename || "";
+      state.sourceUrl = job.sourceUrl || "";
+      state.file = null;
+      state.stems = [];
+      state.chords = [];
+      state.activeChordIndex = -1;
+      state.players = [];
+      els.stems.innerHTML = "";
+      setAudioSource(els.sourcePlayer, job.sourceUrl || "", job.filename || t("original"));
+      renderChords();
+      updateSelectedSummary();
+      updateSeekControl();
+      renderJobs();
+    }
     const response = await fetch(`/api/jobs/${job.jobId}`);
     const data = await readJsonResponse(response, t("couldNotLoadUploaded"));
     if (!response.ok) throw new Error(data.error || t("couldNotLoadUploaded"));
+    if (selectToken !== state.jobSelectToken) return;
     updateTools(data.tools);
     loadJobIntoView(data.job);
     if (data.job.analyzed && !state.chords.length) {
       await loadChordsForCurrentJob();
     }
     showSessionSongTitle(data.job.filename);
+    if (options.autoAnalyze && !data.job.analyzed && selectToken === state.jobSelectToken) {
+      if (await ensureToolsReady()) {
+        await separate();
+      }
+    }
   } catch (error) {
     log(error.message, "error");
+  } finally {
+    if (selectToken === state.jobSelectToken) {
+      els.uploadList.removeAttribute("aria-busy");
+    }
   }
 }
 
@@ -1070,7 +1197,7 @@ async function uploadFile(file) {
   els.exportBtn.disabled = true;
   els.playMixBtn.disabled = true;
   els.stopMixBtn.disabled = true;
-  logProcess(t("uploading", { filename: file.name }));
+  logProcess(t("uploading", { filename: cleanSongName(file.name) }));
 
   const response = await fetch("/api/upload", {
     method: "POST",
@@ -1088,8 +1215,64 @@ async function uploadFile(file) {
   state.jobs = [{ ...data, stems: [], analyzed: false }, ...state.jobs.filter((job) => job.jobId !== data.jobId)];
   renderJobs();
   log(t("uploadComplete"), "success");
+  els.separateBtn.disabled = false;
+  els.stems.removeAttribute("aria-busy");
+  updateBufferProgress([els.sourcePlayer]);
   if (await ensureToolsReady()) {
     await separate();
+  }
+}
+
+async function uploadFiles(files) {
+  const mp3Files = Array.from(files || []).filter(isMp3File);
+  if (!mp3Files.length) {
+    log("No MP3 files were found in the selected folder.", "error");
+    return;
+  }
+  if (mp3Files.length === 1) {
+    await uploadFile(mp3Files[0]);
+    return;
+  }
+
+  els.log.innerHTML = "";
+  state.sessionStep = 0;
+  state.sessionProcesses = [];
+  releaseLoadedAudio();
+  clearCurrentJobView();
+  els.uploadList.setAttribute("aria-busy", "true");
+  setBusy(els.chooseFolderBtn, true, `Uploading 0/${mp3Files.length}`);
+
+  const uploadedJobs = [];
+  try {
+    for (let index = 0; index < mp3Files.length; index += 1) {
+      const file = mp3Files[index];
+      els.chooseFolderBtn.textContent = `Uploading ${index + 1}/${mp3Files.length}`;
+      logProcess(t("uploading", { filename: cleanSongName(file.name) }));
+
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "X-Filename": encodeURIComponent(file.name || "audio.mp3") },
+        body: file,
+      });
+      const data = await readJsonResponse(response, t("uploadFailed"));
+      if (!response.ok) throw new Error(data.error || t("uploadFailed"));
+
+      const job = { ...data, stems: [], analyzed: false };
+      uploadedJobs.push(job);
+      state.jobs = [job, ...state.jobs.filter((item) => item.jobId !== data.jobId)];
+      updateTools(data.tools);
+      renderJobs();
+    }
+
+    log(`Uploaded ${uploadedJobs.length} MP3 files. Select a song from Uploads, then analyze it.`, "success");
+    if (uploadedJobs.length) {
+      await selectJob(uploadedJobs[0]);
+    }
+  } finally {
+    els.uploadList.removeAttribute("aria-busy");
+    setBusy(els.chooseFolderBtn, false);
+    els.chooseFolderBtn.textContent = "Choose Folder";
+    if (els.folderInput) els.folderInput.value = "";
   }
 }
 
@@ -1109,7 +1292,7 @@ async function separate() {
     return;
   }
   const model = els.modelSelect.value;
-  const separationModel = model === "htdemucs_6s_accordion" ? "htdemucs_6s" : model;
+  const separationModel = "mvsep_true_accordion";
   const startedAt = performance.now();
   state.analysisRunning = true;
   setBusy(els.separateBtn, true, t("analyzing"));
@@ -1173,9 +1356,6 @@ async function separate() {
       return { ...job, stems: state.stems, chords: state.chords, analyzed: true };
     });
     showSessionSongTitle(state.filename);
-    if (model === "htdemucs_6s_accordion") {
-      await appendAccordionForCurrentJob();
-    }
     if (await loadChordsForCurrentJob()) {
       log(t("sessionReadyToPlay"), "success");
     }
@@ -1197,7 +1377,7 @@ function renderStems() {
   els.stems.innerHTML = "";
   state.players = [];
 
-  for (const stem of state.stems) {
+  state.stems.forEach((stem, stemIndex) => {
     const card = document.createElement("article");
     card.className = "stem";
 
@@ -1213,18 +1393,20 @@ function renderStems() {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = stem.active;
+    checkbox.dataset.stemIndex = String(stemIndex);
     checkbox.dataset.stemKey = stemKey(stem);
     checkbox.addEventListener("change", () => {
+      const toggleTime = state.mixPlaying ? currentMixTime() : 0;
       stem.active = checkbox.checked;
       applyStemSelectionRules(stem);
       updateStemControls();
-      syncPlayers();
+      resyncMixAfterStemSelection(stem, toggleTime).catch((error) => log(error.message, "error"));
     });
     toggle.append(checkbox, t("select"));
 
     const audio = document.createElement("audio");
     audio.controls = true;
-    audio.preload = "metadata";
+    audio.preload = "auto";
     setAudioSource(audio, stem.url, stem.name);
     audio.addEventListener("play", () => {
       if (!isStemActive(stem) && !state.mixPlaying) {
@@ -1238,12 +1420,15 @@ function renderStems() {
     audio.addEventListener("timeupdate", updateSeekControl);
     audio.addEventListener("seeked", updateSeekControl);
     audio.addEventListener("ended", handleMixPlaybackEnded);
+    for (const event of ["canplay", "canplaythrough", "durationchange", "loadeddata", "loadedmetadata", "progress"]) {
+      audio.addEventListener(event, scheduleBufferProgress);
+    }
 
     header.append(name, toggle);
     card.append(header, audio);
     els.stems.append(card);
     state.players.push({ stem, audio, card });
-  }
+  });
   applyPreviewGain();
   updateSeekControl();
   updateSelectedSummary();
@@ -1251,8 +1436,8 @@ function renderStems() {
 }
 
 function updateStemControls() {
-  els.stems.querySelectorAll('input[type="checkbox"][data-stem-key]').forEach((checkbox) => {
-    const stem = state.stems.find((item) => stemKey(item) === checkbox.dataset.stemKey);
+  els.stems.querySelectorAll('input[type="checkbox"][data-stem-index]').forEach((checkbox) => {
+    const stem = state.stems[Number(checkbox.dataset.stemIndex)];
     if (stem) checkbox.checked = Boolean(stem.active);
   });
   updateSelectedSummary();
@@ -1385,59 +1570,6 @@ function updateCurrentChord() {
   }
 }
 
-async function appendAccordionForCurrentJob() {
-  const jobId = state.jobId;
-  if (!jobId) return;
-  const startedAt = performance.now();
-  log(t("accordionPending"));
-  logProcess(t("accordionStarted"));
-  const stillRunningTimer = window.setTimeout(() => {
-    log(t("accordionStillRunning"));
-  }, 30000);
-  try {
-    const result = await postJson("/api/accordion", { jobId });
-    updateTools(result.data.tools || {});
-    if (result.response.status === 424 && await ensureToolsReady()) {
-      return await appendAccordionForCurrentJob();
-    }
-    if (!result.response.ok) {
-      log(result.data.details || result.data.error || t("accordionFailed"), "error");
-      return;
-    }
-    if (state.jobId !== jobId) return;
-    const activeById = new Map(state.stems.map((stem) => [stem.id || stem.name, stem.active]));
-    state.stems = result.data.stems.map((stem) => ({
-      ...stem,
-      active: activeById.get(stem.id || stem.name) ?? defaultStemActive(stem),
-    }));
-    renderStems();
-    syncPlayers();
-    state.jobs = state.jobs.map((job) => {
-      if (job.jobId !== jobId) return job;
-      return { ...job, stems: state.stems, analyzed: true };
-    });
-    renderJobs();
-    log(
-      result.data.cached
-        ? t("separationCached", { model: "Accordion" })
-        : t("accordionFinished", { seconds: elapsedSeconds(startedAt) }),
-      "success",
-    );
-    log(t("accordionReady"), "success");
-  } finally {
-    window.clearTimeout(stillRunningTimer);
-  }
-}
-
-function applyNoAccordionCacheBust(stems) {
-  const stamp = Date.now();
-  return stems.map((stem) => {
-    if (!isNoAccordionMix(stem)) return stem;
-    const separator = stem.url.includes("?") ? "&" : "?";
-    return { ...stem, url: `${stem.url}${separator}v=${stamp}` };
-  });
-}
-
 function playbackTime() {
   return currentPlaybackTime();
 }
@@ -1477,7 +1609,7 @@ function normalizedStemName(stem) {
 }
 
 function isAccordionStem(stem) {
-  return normalizedStemName(stem) === "accordion";
+  return normalizedStemName(stem).includes("accordion") && !isNoAccordionMix(stem);
 }
 
 function isNoAccordionMix(stem) {
@@ -1485,7 +1617,25 @@ function isNoAccordionMix(stem) {
 }
 
 function isAccordionBleedStem(stem) {
-  return ["piano", "other"].includes(normalizedStemName(stem));
+  return [
+    "piano",
+    "digital piano",
+    "keys",
+    "keyboard",
+    "organ",
+    "harmonium",
+    "synth",
+    "synthesizer",
+    "other",
+  ].includes(normalizedStemName(stem));
+}
+
+function isPianoFamilyStem(stem) {
+  return ["piano", "digital piano", "keys"].includes(normalizedStemName(stem));
+}
+
+function isAccordionRelatedStem(stem) {
+  return isAccordionStem(stem) || isAccordionBleedStem(stem) || isPianoFamilyStem(stem);
 }
 
 function isTrueAccordionModelStem(stem) {
@@ -1493,7 +1643,7 @@ function isTrueAccordionModelStem(stem) {
 }
 
 function defaultStemActive(stem) {
-  return !isNoAccordionMix(stem);
+  return true;
 }
 
 function hasAccordionStem() {
@@ -1501,47 +1651,23 @@ function hasAccordionStem() {
 }
 
 function applyStemSelectionRules(changedStem) {
-  if (isTrueAccordionModelStem(changedStem)) return;
-
-  if (isAccordionStem(changedStem)) {
-    if (changedStem.active) {
-      state.stems.forEach((stem) => {
-        if (isNoAccordionMix(stem)) stem.active = false;
-      });
-      return;
-    }
+  if (isAccordionStem(changedStem) && !changedStem.active) {
     state.stems.forEach((stem) => {
-      if (isAccordionStem(stem) || isAccordionBleedStem(stem) || isNoAccordionMix(stem)) {
+      if (stem !== changedStem && isAccordionRelatedStem(stem)) {
         stem.active = false;
       }
     });
-    return;
+    return changedStem;
   }
-
-  if (isNoAccordionMix(changedStem) && changedStem.active) {
-    state.stems.forEach((stem) => {
-      if (stem !== changedStem && (isAccordionStem(stem) || isAccordionBleedStem(stem))) {
-        stem.active = false;
-      }
-    });
-    return;
-  }
-
-  if (isAccordionBleedStem(changedStem) && changedStem.active) {
-    const accordion = state.stems.find(isAccordionStem);
-    if (accordion && !accordion.active) {
-      changedStem.active = false;
-    }
-  }
+  return changedStem;
 }
 
 function currentStemFor(stem) {
-  const key = stemKey(stem);
-  return state.stems.find((item) => stemKey(item) === key) || stem;
+  return stem;
 }
 
 function isStemActive(stem) {
-  return Boolean(currentStemFor(stem)?.active);
+  return Boolean(stem?.active);
 }
 
 function previewStemGain() {
@@ -1555,32 +1681,22 @@ function applyPreviewGain() {
   if (els.sourcePlayer) {
     els.sourcePlayer.volume = 1;
     const sourceNode = visualizer.nodes.get(els.sourcePlayer);
-    if (sourceNode?.gainNode) sourceNode.gainNode.gain.value = state.masterVolume;
+    if (sourceNode?.gainNode) setAudioParamValue(sourceNode.gainNode.gain, state.masterVolume);
   }
   for (const { stem, audio } of state.players) {
-    audio.volume = 1;
     const node = visualizer.nodes.get(audio);
-    if (node?.gainNode) node.gainNode.gain.value = isStemActive(stem) ? gain : 0;
-    if (isStemActive(stem)) {
+    const active = isStemActive(stem);
+    if (node?.gainNode) setAudioParamValue(node.gainNode.gain, active ? gain : 0);
+    if (active) {
+      audio.volume = 1;
       audio.muted = false;
       audio.defaultMuted = false;
     } else {
-      audio.muted = true;
-      audio.defaultMuted = true;
+      audio.volume = 1;
+      audio.muted = false;
+      audio.defaultMuted = false;
     }
   }
-}
-
-function updateLoopButton() {
-  if (!els.loopBtn) return;
-  els.loopBtn.classList.toggle("active", state.loopEnabled);
-  els.loopBtn.setAttribute("aria-pressed", state.loopEnabled ? "true" : "false");
-}
-
-function toggleLoop() {
-  state.loopEnabled = !state.loopEnabled;
-  localStorage.setItem("detrace-loop-enabled", state.loopEnabled ? "1" : "0");
-  updateLoopButton();
 }
 
 function setMasterVolume(value) {
@@ -1618,13 +1734,28 @@ function updateToneLed(element, value) {
   });
 }
 
-function applyToneControls() {
-  for (const node of visualizer.nodes.values()) {
-    if (node.bassFilter) node.bassFilter.gain.value = state.bassLevel;
-    if (node.trebleFilter) node.trebleFilter.gain.value = state.trebleLevel;
-    if (node.gainNode) node.gainNode.gain.value = node.audio === els.sourcePlayer ? state.masterVolume : node.gainNode.gain.value;
+function setAudioParamValue(param, value) {
+  if (!param) return;
+  const context = visualizer.context;
+  if (context && typeof param.setTargetAtTime === "function") {
+    param.cancelScheduledValues(context.currentTime);
+    param.setTargetAtTime(value, context.currentTime, 0.025);
+    return;
   }
-  applyPreviewGain();
+  param.value = value;
+}
+
+function applyToneControls() {
+  state.toneUpdateFrame = 0;
+  for (const node of visualizer.nodes.values()) {
+    setAudioParamValue(node.bassFilter?.gain, state.bassLevel);
+    setAudioParamValue(node.trebleFilter?.gain, state.trebleLevel);
+  }
+}
+
+function scheduleToneControls() {
+  if (state.toneUpdateFrame) return;
+  state.toneUpdateFrame = requestAnimationFrame(applyToneControls);
 }
 
 function setToneLevel(kind, value) {
@@ -1642,28 +1773,50 @@ function setToneLevel(kind, value) {
     if (els.trebleValue) els.trebleValue.textContent = `${level > 0 ? "+" : ""}${level} dB`;
     updateToneLed(els.trebleLed, level);
   }
-  applyToneControls();
+  scheduleToneControls();
 }
 
 function shouldAudioPlay(audio, token) {
   const player = playerForAudio(audio);
-  return Boolean(player && state.mixPlaying && audio.dataset.playToken === String(token));
+  return Boolean(player && isStemActive(player.stem) && state.mixPlaying && audio.dataset.playToken === String(token));
 }
 
 function cancelAudioPlay(audio) {
   audio.dataset.playToken = "";
   audio.dataset.starting = "";
-  audio.muted = true;
-  audio.defaultMuted = true;
-  audio.volume = 0;
+  audio.muted = false;
+  audio.defaultMuted = false;
+  audio.volume = 1;
   const node = visualizer.nodes.get(audio);
-  if (node?.gainNode) node.gainNode.gain.value = 0;
+  if (node?.gainNode) setAudioParamValue(node.gainNode.gain, 0);
+  audio.pause();
+}
+
+function pauseDeselectedStemAudio(audio) {
+  audio.dataset.playToken = "";
+  audio.dataset.starting = "";
+  audio.muted = false;
+  audio.defaultMuted = false;
+  audio.volume = 1;
+  const node = visualizer.nodes.get(audio);
+  if (node?.gainNode) setAudioParamValue(node.gainNode.gain, 0);
+  audio.pause();
+}
+
+function pauseMixAudio(audio) {
+  audio.dataset.playToken = "";
+  audio.dataset.starting = "";
   audio.pause();
 }
 
 function stopStaleAudio(audio, token) {
   if (shouldAudioPlay(audio, token)) {
     return true;
+  }
+  const player = playerForAudio(audio);
+  if (state.mixPlaying && player && !isStemActive(player.stem)) {
+    pauseDeselectedStemAudio(audio);
+    return false;
   }
   audio.pause();
   return false;
@@ -1672,8 +1825,6 @@ function stopStaleAudio(audio, token) {
 function mixMasterPlayer() {
   return activeMixPlayers().find(({ audio }) => (
     !audio.paused && !audio.ended && Number.isFinite(audio.currentTime)
-  )) || state.players.find(({ audio }) => (
-    !audio.paused && !audio.ended && Number.isFinite(audio.currentTime)
   )) || null;
 }
 
@@ -1681,7 +1832,7 @@ function syncActivePlayerTimes() {
   const master = mixMasterPlayer();
   if (!master) return;
   const masterTime = master.audio.currentTime;
-  for (const { audio } of state.players) {
+  for (const { audio } of activeMixPlayers()) {
     if (audio === master.audio || audio.paused || audio.ended) continue;
     const drift = audio.currentTime - masterTime;
     if (Math.abs(drift) > mixSyncToleranceSeconds) {
@@ -1697,21 +1848,15 @@ function syncPlayers() {
   els.exportBtn.disabled = !hasSelection;
   els.playMixBtn.disabled = !hasSelection;
   els.stopMixBtn.disabled = !state.players.length;
-  if (els.rewindBtn) els.rewindBtn.disabled = currentPlaybackDuration() <= 0;
   updatePauseButton();
   applyPreviewGain();
+  updateBufferProgress();
   for (const { stem, audio } of state.players) {
     if (!isStemActive(stem)) {
-      audio.muted = true;
-      audio.defaultMuted = true;
-      audio.volume = 0;
-      if (!state.mixPlaying) {
+      if (state.mixPlaying) {
+        pauseDeselectedStemAudio(audio);
+      } else {
         cancelAudioPlay(audio);
-      } else if ((audio.paused || audio.ended) && audio.dataset.starting !== "1") {
-        audio.currentTime = mixTime;
-        playAudioWithRetry(audio).catch((error) => logAudioPlayError(audio, error));
-      } else if (Number.isFinite(audio.currentTime) && Math.abs(audio.currentTime - mixTime) > mixSyncToleranceSeconds) {
-        audio.currentTime = mixTime;
       }
       continue;
     }
@@ -1738,8 +1883,82 @@ function syncPlayers() {
   updatePlayedStemHighlights();
 }
 
+async function resyncMixAfterStemSelection(changedStem = null, requestedMixTime = null) {
+  if (!state.mixPlaying) {
+    syncPlayers();
+    return;
+  }
+
+  const mixTime = Number.isFinite(requestedMixTime) ? Math.max(0, requestedMixTime) : currentMixTime();
+  const activePlayers = activeMixPlayers();
+
+  if (!activePlayers.length) {
+    state.mixPlaying = false;
+    state.mixStartedAt = 0;
+    state.mixPausedAt = mixTime;
+    syncPlayers();
+    return;
+  }
+
+  const sessionToken = ++state.mixSessionToken;
+  state.mixPausedAt = 0;
+  updateSelectedSummary();
+  els.exportBtn.disabled = false;
+  els.playMixBtn.disabled = false;
+  els.stopMixBtn.disabled = !state.players.length;
+  updatePauseButton();
+  applyPreviewGain();
+  updatePlayedStemHighlights();
+
+  const playersToStart = [];
+  for (const { stem, audio } of state.players) {
+    const duration = finiteDuration(audio) || mixTime;
+    const targetTime = Number.isFinite(mixTime) ? Math.min(mixTime, duration) : 0;
+    if (!isStemActive(stem)) {
+      pauseDeselectedStemAudio(audio);
+      continue;
+    }
+
+    audio.muted = false;
+    audio.defaultMuted = false;
+    audio.volume = 1;
+    if (audio.paused || audio.ended || stem === changedStem) {
+      audio.currentTime = targetTime;
+      playersToStart.push({ stem, audio });
+    } else if (Number.isFinite(audio.currentTime) && Math.abs(audio.currentTime - mixTime) > mixSyncToleranceSeconds) {
+      audio.currentTime = targetTime;
+    }
+  }
+
+  applyPreviewGain();
+  startSpectrum();
+  startChordTracking();
+  if (playersToStart.length && !await waitForActivePlayerBuffers(playersToStart, mixTime, false)) {
+    if (sessionToken !== state.mixSessionToken) return;
+    updatePauseButton();
+    updateSeekControl();
+    updatePlayedStemHighlights();
+    return;
+  }
+  if (sessionToken !== state.mixSessionToken) return;
+  state.mixStartedAt = performance.now() - mixTime * 1000;
+  const anyPlaying = playersToStart.length ? await playAudioGroup(playersToStart) : activePlayers.some(({ audio }) => !audio.paused && !audio.ended);
+  if (sessionToken !== state.mixSessionToken) return;
+  if (!anyPlaying) {
+    state.mixPlaying = false;
+    state.mixStartedAt = 0;
+    state.mixPausedAt = mixTime;
+  }
+  syncActivePlayerTimes();
+  updatePauseButton();
+  updateSeekControl();
+  updatePlayedStemHighlights();
+}
+
 async function playAudioGroup(players) {
-  const results = await Promise.allSettled(players.map(({ audio }) => playAudioWithRetry(audio)));
+  const sessionToken = state.mixSessionToken;
+  const results = await Promise.allSettled(players.map(({ audio }) => playAudioWithRetry(audio, sessionToken)));
+  if (sessionToken !== state.mixSessionToken) return false;
   const failed = results
     .map((result, index) => ({ result, player: players[index] }))
     .filter(({ result }) => result.status === "rejected");
@@ -1773,7 +1992,7 @@ function sleep(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-async function playAudioWithRetry(audio) {
+async function playAudioWithRetry(audio, sessionToken = state.mixSessionToken) {
   if (audio.dataset.starting === "1") {
     return false;
   }
@@ -1782,20 +2001,29 @@ async function playAudioWithRetry(audio) {
   audio.dataset.starting = "1";
   try {
     for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (sessionToken !== state.mixSessionToken) return false;
       if (!shouldAudioPlay(audio, token)) {
-        audio.muted = true;
+        const node = visualizer.nodes.get(audio);
+        if (node?.gainNode) setAudioParamValue(node.gainNode.gain, 0);
         return false;
       }
       prepareAudioOutput(audio);
       applyPreviewGain();
       try {
         await audio.play();
+        if (sessionToken !== state.mixSessionToken) {
+          audio.pause();
+          return false;
+        }
+        startSpectrum();
+        updatePlayedStemHighlights();
         return stopStaleAudio(audio, token);
       } catch (error) {
         if (!interruptedPlay(error)) {
           throw error;
         }
         await sleep(120 + attempt * 120);
+        if (sessionToken !== state.mixSessionToken) return false;
         if (!stopStaleAudio(audio, token) || (!state.mixPlaying && state.mixPausedAt <= 0)) {
           return false;
         }
@@ -1817,16 +2045,27 @@ async function playMix() {
   const startAt = currentPlaybackTime();
   els.sourcePlayer.pause();
   stopMix();
+  state.mixSessionToken += 1;
   state.mixPlaying = true;
-  state.mixStartedAt = performance.now() - startAt * 1000;
+  state.mixStartedAt = 0;
   state.mixPausedAt = 0;
   for (const { audio } of players) {
     audio.currentTime = startAt;
   }
+  updatePauseButton();
   applyPreviewGain();
   startSpectrum();
   startChordTracking();
-  const anyPlaying = await playAudioGroup(players);
+  if (!await waitForActivePlayerBuffers(activePlayers, startAt)) {
+    state.mixPlaying = false;
+    state.mixStartedAt = 0;
+    state.mixPausedAt = 0;
+    updatePauseButton();
+    updateSeekControl();
+    return;
+  }
+  state.mixStartedAt = performance.now() - startAt * 1000;
+  const anyPlaying = await playAudioGroup(activePlayers);
   if (!anyPlaying) {
     state.mixPlaying = false;
     state.mixStartedAt = 0;
@@ -1839,6 +2078,7 @@ async function playMix() {
 }
 
 function stopMix() {
+  state.mixSessionToken += 1;
   for (const { audio } of state.players) {
     cancelAudioPlay(audio);
     audio.currentTime = 0;
@@ -1853,8 +2093,10 @@ function stopMix() {
 }
 
 function restartMixFrom(startAt = 0) {
+  const activePlayers = activeMixPlayers();
+  if (!activePlayers.length) return;
   const players = state.players;
-  if (!players.length) return;
+  state.mixSessionToken += 1;
   state.mixPlaying = true;
   state.mixStartedAt = performance.now() - startAt * 1000;
   state.mixPausedAt = 0;
@@ -1864,7 +2106,7 @@ function restartMixFrom(startAt = 0) {
   applyPreviewGain();
   startSpectrum();
   startChordTracking();
-  playAudioGroup(players).then((started) => {
+  playAudioGroup(activePlayers).then((started) => {
     if (!started) {
       state.mixPlaying = false;
       state.mixStartedAt = 0;
@@ -1885,11 +2127,6 @@ function handleMixPlaybackEnded() {
   });
   if (!finished && currentMixTime() < duration - 0.12) return;
 
-  if (state.loopEnabled) {
-    restartMixFrom(0);
-    return;
-  }
-
   state.mixPlaying = false;
   state.mixStartedAt = 0;
   state.mixPausedAt = 0;
@@ -1901,15 +2138,166 @@ function handleMixPlaybackEnded() {
 
 function updatePauseButton() {
   if (!els.pauseBtn) return;
-  const sourceActive = els.sourcePlayer.src && !els.sourcePlayer.ended && els.sourcePlayer.currentTime > 0;
+  const sourceAvailable = Boolean(els.sourcePlayer.src && !els.sourcePlayer.ended);
+  const sourcePlaying = Boolean(sourceAvailable && !els.sourcePlayer.paused);
+  const sourcePausedForResume = Boolean(
+    sourceAvailable
+    && els.sourcePlayer.paused
+    && state.sourceResumeReady
+    && els.sourcePlayer.currentTime > 0
+  );
   const players = state.players;
-  const mixActive = state.mixPlaying || state.mixPausedAt > 0 || players.some(({ audio }) => audio.currentTime > 0);
-  const canPause = Boolean(sourceActive || mixActive);
-  const paused = sourceActive
-    ? els.sourcePlayer.paused
-    : Boolean(state.mixPausedAt || players.every(({ audio }) => audio.paused));
+  const mixActive = Boolean(
+    state.mixPlaying
+    || state.mixPausedAt > 0
+    || players.some(({ audio }) => !audio.paused || audio.currentTime > 0)
+  );
+  const canPause = Boolean(sourceAvailable || mixActive);
+  const paused = Boolean(state.mixPausedAt > 0 || sourcePausedForResume);
   els.pauseBtn.disabled = !canPause;
-  els.pauseBtn.textContent = paused && canPause ? t("resume") : t("pause");
+  els.pauseBtn.textContent = paused && canPause && !sourcePlaying ? t("resume") : t("pause");
+}
+
+function bufferedCoverageRatio(audio) {
+  if (!audio?.src) return 0;
+  const duration = finiteDuration(audio);
+  if (audio.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) return 1;
+  if (!duration) return audio.readyState >= HTMLMediaElement.HAVE_METADATA ? 1 : 0;
+  let coveredSeconds = 0;
+  for (let index = 0; index < audio.buffered.length; index += 1) {
+    const start = Math.max(0, audio.buffered.start(index));
+    const end = Math.min(duration, audio.buffered.end(index));
+    if (end > start) coveredSeconds += end - start;
+  }
+  const ratio = Math.max(0, Math.min(1, coveredSeconds / duration));
+  if (ratio > 0) return ratio;
+  return audio.readyState >= HTMLMediaElement.HAVE_METADATA ? 1 : 0;
+}
+
+function audioFullyBuffered(audio) {
+  return audio?.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA || bufferedCoverageRatio(audio) >= 0.985;
+}
+
+function bufferedPast(audio, startAt, seconds = 4) {
+  if (!audio?.src) return false;
+  if (audio.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) return true;
+  const duration = finiteDuration(audio);
+  const safeStart = Math.max(0, Number(startAt) || 0);
+  const target = Math.min(duration || safeStart + seconds, safeStart + seconds);
+  for (let index = 0; index < audio.buffered.length; index += 1) {
+    if (audio.buffered.start(index) <= safeStart + 0.05 && audio.buffered.end(index) >= target) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function activeBufferAudios() {
+  const activeAudios = activeMixPlayers().map(({ audio }) => audio).filter((audio) => audio?.src);
+  if (activeAudios.length) return activeAudios;
+  if (els.sourcePlayer?.src) return [els.sourcePlayer];
+  return state.players.map(({ audio }) => audio).filter((audio) => audio?.src);
+}
+
+function bufferProgressForAudios(audios = activeBufferAudios()) {
+  const validAudios = audios.filter((audio) => audio?.src);
+  if (!validAudios.length) return 0;
+  return Math.min(...validAudios.map(bufferedCoverageRatio));
+}
+
+function updateBufferProgress(audios = activeBufferAudios()) {
+  const ratio = bufferProgressForAudios(audios);
+  const percent = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+  if (els.bufferFill) els.bufferFill.style.width = `${percent}%`;
+  if (els.bufferPercent) els.bufferPercent.textContent = `${percent}%`;
+}
+
+function scheduleBufferProgress() {
+  if (state.bufferProgressFrame) return;
+  state.bufferProgressFrame = requestAnimationFrame(() => {
+    state.bufferProgressFrame = 0;
+    updateBufferProgress();
+  });
+}
+
+function waitForAudioFullyBuffered(audio, timeoutMs = 2400) {
+  if (audioFullyBuffered(audio)) return Promise.resolve(true);
+  audio.preload = "auto";
+  if (audio.readyState === HTMLMediaElement.HAVE_NOTHING) {
+    try {
+      audio.load();
+    } catch {
+      // Some embedded browsers do not allow load() during active media state.
+    }
+  }
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ready) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      for (const event of events) {
+        audio.removeEventListener(event, check);
+      }
+      updateBufferProgress();
+      resolve(ready);
+    };
+    const check = () => {
+      updateBufferProgress();
+      if (audioFullyBuffered(audio)) finish(true);
+    };
+    const events = ["canplay", "canplaythrough", "durationchange", "loadeddata", "loadedmetadata", "progress"];
+    const timer = window.setTimeout(() => finish(true), timeoutMs);
+    for (const event of events) {
+      audio.addEventListener(event, check);
+    }
+    check();
+  });
+}
+
+function waitForAudioReadyAt(audio, startAt, timeoutMs = 2400) {
+  if (bufferedPast(audio, startAt)) return Promise.resolve(true);
+  audio.preload = "auto";
+  if (audio.readyState === HTMLMediaElement.HAVE_NOTHING) {
+    try {
+      audio.load();
+    } catch {
+      // Some embedded browsers do not allow load() during active media state.
+    }
+  }
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ready) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      for (const event of events) {
+        audio.removeEventListener(event, check);
+      }
+      updateBufferProgress();
+      resolve(ready);
+    };
+    const check = () => {
+      updateBufferProgress();
+      if (bufferedPast(audio, startAt)) finish(true);
+    };
+    const events = ["canplay", "canplaythrough", "durationchange", "loadeddata", "loadedmetadata", "progress"];
+    const timer = window.setTimeout(() => finish(true), timeoutMs);
+    for (const event of events) {
+      audio.addEventListener(event, check);
+    }
+    check();
+  });
+}
+
+async function waitForActivePlayerBuffers(players, startAt = 0, requireFullBuffer = true) {
+  const sessionToken = state.mixSessionToken;
+  updateBufferProgress(players.map(({ audio }) => audio));
+  const ready = await Promise.all(players.map(({ audio }) => (
+    requireFullBuffer ? waitForAudioFullyBuffered(audio) : waitForAudioReadyAt(audio, startAt)
+  )));
+  updateBufferProgress(players.map(({ audio }) => audio));
+  return sessionToken === state.mixSessionToken && ready.every(Boolean);
 }
 
 async function togglePause() {
@@ -1919,10 +2307,12 @@ async function togglePause() {
   }
   if (!els.sourcePlayer.src) return;
   if (els.sourcePlayer.paused) {
+    state.sourceResumeReady = false;
     prepareAudioOutput(els.sourcePlayer);
     await els.sourcePlayer.play();
     startChordTracking();
   } else {
+    state.sourceResumeReady = true;
     els.sourcePlayer.pause();
   }
   updatePauseButton();
@@ -1936,35 +2326,51 @@ async function toggleMixPause() {
 
   if (state.mixPlaying) {
     state.mixPausedAt = currentMixTime();
+    state.mixSessionToken += 1;
     for (const { audio } of players) {
-      cancelAudioPlay(audio);
+      pauseMixAudio(audio);
     }
     state.mixPlaying = false;
     state.mixStartedAt = 0;
     updateCurrentChord();
     updatePauseButton();
+    updatePlayedStemHighlights();
     return;
   }
 
   const resumeAt = state.mixPausedAt;
+  state.mixSessionToken += 1;
   state.mixPlaying = true;
-  state.mixStartedAt = performance.now() - resumeAt * 1000;
+  state.mixStartedAt = 0;
   state.mixPausedAt = 0;
   for (const { audio } of players) {
     audio.currentTime = resumeAt;
   }
+  updatePauseButton();
   applyPreviewGain();
   startSpectrum();
   startChordTracking();
-  const anyPlaying = await playAudioGroup(players);
+  if (!await waitForActivePlayerBuffers(activePlayers, resumeAt)) {
+    state.mixPlaying = false;
+    state.mixStartedAt = 0;
+    state.mixPausedAt = resumeAt;
+    updatePauseButton();
+    updatePlayedStemHighlights();
+    return;
+  }
+  state.mixStartedAt = performance.now() - resumeAt * 1000;
+  const anyPlaying = await playAudioGroup(activePlayers);
   if (!anyPlaying) {
     state.mixPlaying = false;
     state.mixStartedAt = 0;
     state.mixPausedAt = resumeAt;
     updatePauseButton();
+    updatePlayedStemHighlights();
     return;
   }
   syncActivePlayerTimes();
+  startSpectrum();
+  updatePlayedStemHighlights();
   updatePauseButton();
 }
 
@@ -2027,9 +2433,6 @@ function updateSeekControl() {
   if (els.seekDuration) {
     els.seekDuration.textContent = formatClock(duration);
   }
-  if (els.rewindBtn) {
-    els.rewindBtn.disabled = duration <= 0;
-  }
 }
 
 function seekTo(value) {
@@ -2052,10 +2455,6 @@ function seekTo(value) {
   updateCurrentChord();
   updatePauseButton();
   updateSeekControl();
-}
-
-function rewindPlayback(seconds = 10) {
-  seekTo(Math.max(0, currentPlaybackTime() - seconds));
 }
 
 async function exportMix() {
@@ -2273,6 +2672,7 @@ function drawSpectrumCanvas(canvas, frequencyData, active) {
 }
 
 els.chooseBtn.addEventListener("click", () => els.fileInput.click());
+els.chooseFolderBtn?.addEventListener("click", () => els.folderInput?.click());
 els.startAppBtn?.addEventListener("click", () => {
   els.splash?.classList.add("hidden");
 });
@@ -2280,6 +2680,11 @@ els.startAppBtn?.addEventListener("click", () => {
 els.fileInput.addEventListener("change", () => {
   const file = els.fileInput.files[0];
   if (file) uploadFile(file).catch((error) => log(error.message, "error"));
+  els.fileInput.value = "";
+});
+
+els.folderInput?.addEventListener("change", () => {
+  uploadFiles(els.folderInput.files).catch((error) => log(error.message, "error"));
 });
 
 for (const event of ["dragenter", "dragover"]) {
@@ -2297,8 +2702,12 @@ for (const event of ["dragleave", "drop"]) {
 }
 
 els.dropzone.addEventListener("drop", (evt) => {
-  const file = evt.dataTransfer.files[0];
-  if (file) uploadFile(file).catch((error) => log(error.message, "error"));
+  const files = Array.from(evt.dataTransfer.files || []).filter(isMp3File);
+  if (files.length > 1) {
+    uploadFiles(files).catch((error) => log(error.message, "error"));
+    return;
+  }
+  if (files[0]) uploadFile(files[0]).catch((error) => log(error.message, "error"));
 });
 
 els.separateBtn.addEventListener("click", separate);
@@ -2308,8 +2717,6 @@ els.uploadList.addEventListener("click", selectUploadFromList);
 els.playMixBtn.addEventListener("click", playMix);
 els.pauseBtn.addEventListener("click", () => togglePause().catch((error) => log(error.message, "error")));
 els.stopMixBtn.addEventListener("click", stopMix);
-els.rewindBtn?.addEventListener("click", () => rewindPlayback());
-els.loopBtn?.addEventListener("click", toggleLoop);
 els.volumeControl?.addEventListener("input", () => {
   setMasterVolume(Number(els.volumeControl.value) / 100);
 });
@@ -2345,6 +2752,9 @@ els.sourcePlayer.addEventListener("timeupdate", updateCurrentChord);
 els.sourcePlayer.addEventListener("timeupdate", updatePauseButton);
 els.sourcePlayer.addEventListener("timeupdate", updateSeekControl);
 els.sourcePlayer.addEventListener("loadedmetadata", updateSeekControl);
+for (const event of ["canplay", "canplaythrough", "durationchange", "loadeddata", "loadedmetadata", "progress"]) {
+  els.sourcePlayer.addEventListener(event, scheduleBufferProgress);
+}
 els.sourcePlayer.addEventListener("seeked", updateCurrentChord);
 els.sourcePlayer.addEventListener("seeked", updatePauseButton);
 els.sourcePlayer.addEventListener("seeked", updateSeekControl);
@@ -2354,13 +2764,6 @@ els.sourcePlayer.addEventListener("pause", () => {
   updateSeekControl();
 });
 els.sourcePlayer.addEventListener("ended", () => {
-  if (state.loopEnabled) {
-    els.sourcePlayer.currentTime = 0;
-    prepareAudioOutput(els.sourcePlayer);
-    els.sourcePlayer.play().catch((error) => logAudioPlayError(els.sourcePlayer, error));
-    startSpectrum();
-    startChordTracking();
-  }
   updateCurrentChord();
   updatePauseButton();
   updateSeekControl();
@@ -2379,8 +2782,9 @@ buildPianoKeyboard();
 setMasterVolume(state.masterVolume);
 setToneLevel("bass", state.bassLevel);
 setToneLevel("treble", state.trebleLevel);
-updateLoopButton();
+applyToneControls();
 updateSeekControl();
+updateBufferProgress();
 applyLanguage();
 getStatus().catch(() => log(t("couldNotReadStatus"), "error"));
 startStatusPolling();

@@ -33,6 +33,7 @@ python -m PyInstaller `
     --add-data "server.py;." `
     --add-data "desktop_window.py;." `
     --add-data "static;static" `
+    --add-data "assets;assets" `
     --add-data "wheelhouse;wheelhouse" `
     --add-data "models;models" `
     detrace_launcher.py
@@ -44,6 +45,6 @@ Remove-IfExists "dist\workspace"
 Remove-IfExists "dist\__pycache__"
 New-Item -ItemType Directory -Path "dist\.detrace-pyi" | Out-Null
 
-& (Join-Path $PSScriptRoot "sign-app.ps1") -Paths @("dist\DeTrace.exe") -SkipTrust
+& (Join-Path $PSScriptRoot "sign-app.ps1") -Paths @("dist\DeTrace.exe") -SkipTrust -NoCreate
 
 Write-Host "Built executable: dist\DeTrace.exe"

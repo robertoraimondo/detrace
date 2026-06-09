@@ -1,36 +1,29 @@
 # DeTrace
 
-DeTrace is a local Windows desktop app for separating an MP3 into playable instrument stems, muting or removing tracks, previewing the remaining mix in sync, detecting chords, and exporting a new MP3.
+DeTrace is a local Windows app for turning an MP3 into playable instrument stems, previewing a custom mix, removing instruments, detecting chords, and exporting a new MP3. It runs from a desktop launcher and can open either as a native desktop window or in the default web browser.
 
-![DeTrace main interface](https://github.com/user-attachments/assets/703b3094-ec08-4825-a868-00c942d9fb94)
+## What is new
 
-![DeTrace upload and controls layout](https://github.com/user-attachments/assets/9d948a30-5fda-4439-beec-8f80f5553428)
-
-![DeTrace stem selection workspace](https://github.com/user-attachments/assets/ae367163-ca4e-4ebd-90ed-cbf67fa20ff7)
+- Single separation workflow built around the local MVSep Mega 53 model.
+- First-run launcher that prepares the app runtime, copies bundled files, installs missing tools, and starts Desktop App or Web Browser mode.
+- App, setup executable, and launcher form icon support from the shared DeTrace icon assets.
+- Accordion-aware Mega 53 output with accordion, piano, and generated other/no-accordion handling when the model provides the needed stems.
+- Tool and performance status badges for MVSep, FFmpeg, codecs, chords, GPU, CPU, and RAM.
+- Upload history, cached analysis results, and local workspace cleanup from the UI.
+- Chord timeline, current chord display, piano keyboard highlighting, and spectrum visualization.
+- Multilingual UI with English, Italian, Spanish, German, French, Portuguese, Chinese, Japanese, Korean, Arabic, Hindi, and Russian.
 
 ## Features
 
-- Local MP3 upload, analysis, preview, and export.
-- Default full-instrument separation with a local MVSep Mega 53-stem model.
-- Full 53-stem local separation focused on extracting the available instrument tracks from the MVSep Mega model.
-- Accordion-focused output helpers, including an accordion stem and a regenerated no-accordion mix.
-- Synchronized playback for the original track and selected stems.
-- Transport controls for rewind, play selected, pause, stop, loop, seeking, volume, bass, and treble.
-- Chord detection with a timeline, current chord display, and piano keyboard note highlighting.
-- Audio spectrum visualization during playback.
-- Upload history for recently analyzed MP3 files, with a clear action for local workspace cleanup.
-- Tool readiness badges for Demucs, MVSep Accordion, FFmpeg, codecs, chords, GPU, CPU, and RAM.
-- Desktop App and Web Browser launch modes from the same packaged executable.
-- Multilingual interface: English, Italian, Spanish, German, French, Portuguese, Chinese, Japanese, Korean, Arabic, Hindi, and Russian.
-
-The app uses:
-
-- A desktop launcher executable.
-- Python standard library for the local app server.
-- [Demucs](https://github.com/facebookresearch/demucs) for optional source separation.
-- MVSep model files for accordion and full-instrument local separation.
-- FFmpeg, or the bundled `imageio-ffmpeg` fallback, for preview/export media handling.
-- `librosa` for chord detection when installed.
+- Drag-and-drop or file-picker MP3 upload.
+- Local full-instrument stem separation with MVSep Mega 53.
+- Synchronized playback for selected stems.
+- Stem mute/keep selection and MP3 export.
+- Volume, bass, treble, seeking, play, pause, and stop controls.
+- Chord detection through `librosa`.
+- FFmpeg export with `imageio-ffmpeg` fallback when system FFmpeg is unavailable.
+- Local-only HTTP API used by the desktop and browser interfaces.
+- Packaged Windows executable and installer build scripts.
 
 ## Quick start
 
@@ -40,123 +33,132 @@ Build the Windows executable:
 .\build-exe.ps1
 ```
 
-Then run:
+Run the app:
 
 ```text
 dist\DeTrace.exe
 ```
 
-The executable lets you choose **Desktop App** or **Web Browser** mode. It checks the system for Python, installs Python 3.11 with `winget` if needed, creates a local `.detrace-runtime`, installs requirements, codecs, separation tools, and model files, then starts DeTrace in the selected mode.
+On first launch, DeTrace checks for Python, creates a private runtime under the user data folder, installs requirements from the bundled `wheelhouse`, installs MVSep support, verifies the Mega 53 model files, and then opens the selected mode.
 
-In web mode, DeTrace starts a hidden local HTTP server and opens the app in your default browser.
-
-The build also creates a local `wheelhouse/` dependency cache and bundles it into the executable. On a user PC, DeTrace installs requirements from those local files first, which makes setup faster and allows dependency installation without downloading packages again.
-
-To build the Windows installer:
+Build the installer:
 
 ```powershell
 .\build-installer.ps1
 ```
 
+The installer output is written to:
+
+```text
+installer\DeTraceSetup.exe
+```
+
+## Build-time signing
+
+Builds are signed at build time by `sign-app.ps1`. For repeatable signing, keep one DeTrace code-signing certificate and import its private-key PFX on each build machine instead of generating a new certificate on user machines.
+
+The build scripts pass `-NoCreate`, so a build fails if the reusable signing certificate is missing. This prevents accidentally shipping builds signed by different self-signed certificates.
+
+Recommended build-machine setup:
+
+```powershell
+$env:DETRACE_SIGN_CERT_PFX = "D:\secure\DeTrace-CodeSigning.pfx"
+$env:DETRACE_SIGN_CERT_PASSWORD = "your-pfx-password"
+.\build-installer.ps1
+```
+
+If the certificate is already installed in `Cert:\CurrentUser\My`, use its thumbprint:
+
+```powershell
+$env:DETRACE_SIGN_CERT_THUMBPRINT = "THUMBPRINT_WITHOUT_SPACES"
+.\build-installer.ps1
+```
+
+Private certificate files (`*.pfx`, `*.p12`) are ignored by git. The installer does not generate or install trusted certificates on end-user machines.
+
 ## Development
 
-Install the audio tools:
+Install dependencies:
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-If system FFmpeg is not installed, DeTrace uses `imageio-ffmpeg`.
-
-For development, use the script launcher:
+Run the setup launcher from source:
 
 ```powershell
 .\setup-and-run.ps1
 ```
 
-Or double-click:
-
-```text
-setup-and-run.bat
-```
-
-The launcher checks for Python, installs it with `winget` if possible, installs DeTrace requirements, then starts the app.
-
-You can also run the local server directly:
+Or start the local server directly:
 
 ```powershell
 python server.py
 ```
 
-Open [http://localhost:5180](http://localhost:5180) in your browser.
-
-If that port is busy, DeTrace automatically uses the next available port.
-
-## Separation Models
-
-The app uses **Full instrument stems: MVSep Mega 53 local model** as its separation workflow. It runs the local MVSep model, keeps audible instrument outputs, and lets you preview, mute, remove, and export the selected stems from that full model result.
-
-DeTrace still uses Demucs-related tooling only where the packaged runtime needs it for legacy support or setup compatibility. The user-facing workflow is now the full 53-stem MVSep model.
-
-## Local Model Files
-
-The desktop launcher installs local MVSep support during first-run setup by downloading:
-
-- [ZFTurbo/Music-Source-Separation-Training](https://github.com/ZFTurbo/Music-Source-Separation-Training).
-- The MVSep Mega 53-stem accordion config and checkpoint.
-- The optional full-instrument MVSep config and checkpoint configured in `models/mvsep_true_accordion/download-urls.txt`.
-
-After setup, the files are stored inside the installed app folder:
+Then open:
 
 ```text
-.detrace-app/
-  tools/
-    Music-Source-Separation-Training/
-      inference.py
-  models/
-    mvsep_accordion/
-      config.yaml
-      bs_mega_53stem_accordion_mvsep.ckpt
-    mvsep_true_accordion/
-      config.yaml
-      checkpoint.ckpt
+http://localhost:5180
 ```
 
-For advanced/manual setups, you can override the automatic paths with environment variables:
+If port `5180` is busy, the server automatically tries the next available port unless `PORT` is explicitly set.
+
+## Model files
+
+DeTrace uses the full-instrument MVSep Mega 53 model from:
+
+```text
+models\mvsep_true_accordion\
+```
+
+The launcher reads download URLs from:
+
+```text
+models\mvsep_true_accordion\download-urls.txt
+```
+
+After setup, the installed app keeps runtime files under the user's local DeTrace data directory:
+
+```text
+.detrace-app\
+  tools\Music-Source-Separation-Training\
+  models\mvsep_true_accordion\
+    config.yaml
+    checkpoint.ckpt
+.detrace-runtime\
+```
+
+Advanced overrides:
 
 ```powershell
 $env:DETRACE_MVSEP_REPO = "D:\path\to\Music-Source-Separation-Training"
-$env:DETRACE_MVSEP_ACCORDION_CONFIG = "D:\path\to\accordion-config.yaml"
-$env:DETRACE_MVSEP_ACCORDION_CKPT = "D:\path\to\bs_mega_53stem_accordion_mvsep.ckpt"
-$env:DETRACE_MVSEP_TRUE_CONFIG = "D:\path\to\full-model-config.yaml"
-$env:DETRACE_MVSEP_TRUE_CKPT = "D:\path\to\full-model-checkpoint.ckpt"
-```
-
-Optional:
-
-```powershell
+$env:DETRACE_MVSEP_TRUE_CONFIG = "D:\path\to\config.yaml"
+$env:DETRACE_MVSEP_TRUE_CKPT = "D:\path\to\checkpoint.ckpt"
 $env:DETRACE_MVSEP_PYTHON = "D:\path\to\python.exe"
 $env:DETRACE_MVSEP_FORCE_CPU = "1"
+$env:DETRACE_CPU_THREADS = "8"
+$env:DETRACE_ACCORDION_REDUCTION = "0.65"
 ```
 
 ## Workflow
 
-1. Drop an MP3 into the app or click **Choose MP3**.
-2. DeTrace checks the required tools and installs missing components when launched from the desktop package.
-3. DeTrace analyzes the file with the selected local separation model.
-4. Review the generated stems, chords, session log, and tool status.
-5. Select the stems you want to keep in the mix.
-6. Use **Play Selected**, seek, loop, volume, bass, and treble controls to preview the result.
-7. Click **Export MP3** to download the selected-stem mix.
+1. Launch DeTrace and choose Desktop App or Web Browser mode.
+2. Drop an MP3 into the app or choose one from disk.
+3. DeTrace analyzes the file with the local MVSep Mega 53 model.
+4. Review stems, chords, tool status, and the session log.
+5. Select the stems to keep and preview the mix.
+6. Export the selected stems to MP3.
 
-Uploads, stems, chord caches, and exports are stored under `workspace/`, which is ignored by git.
+Uploads, stems, chord caches, and exports are stored under `workspace\`, which is ignored by git.
 
 ## Local API
 
-The app server exposes local-only endpoints for the browser UI:
+The local server exposes these endpoints for the UI:
 
 - `GET /api/status`
 - `GET /api/jobs`
+- `GET /api/jobs/{jobId}`
 - `POST /api/upload`
 - `POST /api/separate`
 - `POST /api/chords`
@@ -164,6 +166,18 @@ The app server exposes local-only endpoints for the browser UI:
 - `POST /api/install-tools`
 - `POST /api/shutdown`
 - `DELETE /api/jobs`
+- `DELETE /api/jobs/{jobId}`
+
+## Build outputs
+
+Generated folders are ignored by git:
+
+- `build\`
+- `dist\`
+- `installer\`
+- `wheelhouse\`
+- `workspace\`
+- `__pycache__\`
 
 ## License
 

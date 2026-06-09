@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import os
 import socket
 import threading
@@ -9,6 +10,48 @@ from pathlib import Path
 import webview
 
 import server
+
+
+APP_USER_MODEL_ID = "RobertoRaimondo.DeTrace.App"
+
+
+def app_icon_path() -> str | None:
+    root = Path(__file__).resolve().parent
+    for icon_path in (
+        root / "assets" / "detrace-icon.ico",
+        root / "assets" / "detrace-icon.png",
+    ):
+        if icon_path.exists():
+            return str(icon_path)
+    return None
+
+
+def set_windows_app_id() -> None:
+    if os.name != "nt":
+        return
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
+    except Exception:
+        pass
+
+
+def apply_native_window_icon() -> None:
+    icon_path = app_icon_path()
+    if os.name != "nt" or not icon_path:
+        return
+    try:
+        from System.Drawing import Icon
+    except Exception:
+        return
+
+    for window in webview.windows:
+        native = getattr(window, "native", None)
+        if native is None:
+            continue
+        try:
+            native.Icon = Icon(icon_path)
+        except Exception:
+            pass
 
 
 def find_free_port(start: int = 5180) -> int:
@@ -41,6 +84,7 @@ class AppApi:
 
 
 def main() -> None:
+    set_windows_app_id()
     port = find_free_port()
     thread = threading.Thread(target=run_server, args=(port,), daemon=True)
     thread.start()
@@ -56,7 +100,7 @@ def main() -> None:
         maximized=True,
     )
     try:
-        webview.start(gui="edgechromium")
+        webview.start(apply_native_window_icon, gui="edgechromium", icon=app_icon_path())
     finally:
         server.stop_server()
 
