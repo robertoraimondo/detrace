@@ -1,5 +1,9 @@
 # DeTrace
 
+<img width="1912" height="1001" alt="image" src="https://github.com/user-attachments/assets/deec9bcd-0cf8-43d0-a01a-d0267b9eea4d" />
+
+<img width="1912" height="1025" alt="image" src="https://github.com/user-attachments/assets/ef252d02-5099-4ff9-9146-204970936e16" />
+
 DeTrace is a local Windows app for turning an MP3 into playable instrument stems, previewing a custom mix, removing instruments, detecting chords, and exporting a new MP3. It runs from a desktop launcher and can open either as a native desktop window or in the default web browser.
 
 ## What is new
